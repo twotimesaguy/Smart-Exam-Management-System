@@ -54,10 +54,10 @@ class ApiService {
     }
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://192.168.0.199:8000';
+      return 'https://flutterapplication1-production-8866.up.railway.app';
     }
 
-    return 'http://192.168.0.199:8000';
+    return 'https://flutterapplication1-production-8866.up.railway.app';
   }
 
   Uri _uri(String path, [Map<String, String?> query = const {}]) {

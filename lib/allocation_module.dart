@@ -1,0 +1,800 @@
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api_service.dart';
+import 'package:flutter_application_1/file_export_service.dart';
+import 'package:flutter_application_1/module_shell.dart';
+
+class AllocationModule extends StatefulWidget {
+  const AllocationModule({super.key});
+
+  @override
+  State<AllocationModule> createState() => _AllocationModuleState();
+}
+
+class _AllocationModuleState extends State<AllocationModule> {
+  static const _semesterOptions = ['First Semester', 'Second Semester'];
+  static const _maxSessionDurationMinutes = 120;
+
+  final _titleController = TextEditingController(
+    text: 'Smart Allocation Timetable',
+  );
+  final _lecturersController = TextEditingController();
+  final _venuesController = TextEditingController();
+  final _coursesController = TextEditingController();
+  final _programmesController = TextEditingController();
+  final _courseLecturersController = TextEditingController();
+  final _timeSlotsController = TextEditingController(
+    text: '07:00, 12:00, 16:00',
+  );
+
+  String _selectedSemester = _semesterOptions.first;
+  int _currentStep = 0;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _isCalculating = false;
+  bool _isLoading = true;
+  bool _isOpeningExcel = false;
+  bool _isClearingTimetable = false;
+  List<Map<String, dynamic>> _timetables = const [];
+  List<PlatformFile> _lecturerFiles = const [];
+  List<PlatformFile> _venueFiles = const [];
+  List<PlatformFile> _courseFiles = const [];
+  List<PlatformFile> _programmeFiles = const [];
+  List<PlatformFile> _courseLecturerFiles = const [];
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTimetables();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _lecturersController.dispose();
+    _venuesController.dispose();
+    _coursesController.dispose();
+    _programmesController.dispose();
+    _courseLecturersController.dispose();
+    _timeSlotsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTimetables() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final timetables = await ApiService.instance.fetchTimetables();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _timetables = timetables.take(1).toList());
+    } catch (error) {
+      _errorMessage = error.toString().replaceFirst('Exception: ', '');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _pickFiles(_AllocationFileGroup group) async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['xlsx', 'xlsm', 'csv', 'txt', 'docx', 'pdf'],
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      switch (group) {
+        case _AllocationFileGroup.lecturers:
+          _lecturerFiles = [..._lecturerFiles, ...result.files];
+          break;
+        case _AllocationFileGroup.venues:
+          _venueFiles = [..._venueFiles, ...result.files];
+          break;
+        case _AllocationFileGroup.courses:
+          _courseFiles = [..._courseFiles, ...result.files];
+          break;
+        case _AllocationFileGroup.programmes:
+          _programmeFiles = [..._programmeFiles, ...result.files];
+          break;
+        case _AllocationFileGroup.courseLecturers:
+          _courseLecturerFiles = [..._courseLecturerFiles, ...result.files];
+          break;
+      }
+    });
+  }
+
+  void _removeFile(_AllocationFileGroup group, PlatformFile file) {
+    setState(() {
+      switch (group) {
+        case _AllocationFileGroup.lecturers:
+          _lecturerFiles = _lecturerFiles
+              .where((item) => item != file)
+              .toList();
+          break;
+        case _AllocationFileGroup.venues:
+          _venueFiles = _venueFiles.where((item) => item != file).toList();
+          break;
+        case _AllocationFileGroup.courses:
+          _courseFiles = _courseFiles.where((item) => item != file).toList();
+          break;
+        case _AllocationFileGroup.programmes:
+          _programmeFiles = _programmeFiles
+              .where((item) => item != file)
+              .toList();
+          break;
+        case _AllocationFileGroup.courseLecturers:
+          _courseLecturerFiles = _courseLecturerFiles
+              .where((item) => item != file)
+              .toList();
+          break;
+      }
+    });
+  }
+
+  Future<void> _selectDate({required bool isStartDate}) async {
+    final now = DateTime.now();
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: isStartDate
+          ? _startDate ?? now
+          : _endDate ?? _startDate ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (selectedDate == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      if (isStartDate) {
+        _startDate = selectedDate;
+        if (_endDate != null && _endDate!.isBefore(selectedDate)) {
+          _endDate = selectedDate;
+        }
+      } else {
+        _endDate = selectedDate;
+      }
+    });
+  }
+
+  Future<void> _runAutoAllocation() async {
+    if (!_isWizardReady()) {
+      setState(() {
+        _errorMessage =
+            'Complete the lecturers, venues, courses, programmes, course lecturers, time slots, and date range before running allocation.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isCalculating = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final timetable = await ApiService.instance.runWizardSmartAllocation(
+        title: _titleController.text.trim().isEmpty
+            ? 'Smart Allocation Timetable'
+            : _titleController.text.trim(),
+        startDate: _apiDate(_startDate!),
+        endDate: _apiDate(_endDate!),
+        semester: _selectedSemester,
+        timeSlots: _timeSlotsController.text.trim(),
+        lecturers: _lecturersController.text.trim(),
+        venues: _venuesController.text.trim(),
+        courses: _coursesController.text.trim(),
+        programmes: _programmesController.text.trim(),
+        courseLecturers: _courseLecturersController.text.trim(),
+        files: _selectedUploads(),
+        maxSessionDurationMinutes: _maxSessionDurationMinutes,
+      );
+      await _loadTimetables();
+      if (!mounted) {
+        return;
+      }
+      await _openTimetableExcel(timetable, showLoading: false);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Smart allocation timetable generated.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_errorMessage!)));
+    } finally {
+      if (mounted) {
+        setState(() => _isCalculating = false);
+      }
+    }
+  }
+
+  Future<void> _openTimetableExcel(
+    Map<String, dynamic> timetable, {
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      setState(() => _isOpeningExcel = true);
+    }
+
+    try {
+      final timetableId = timetable['id'] as int;
+      final title = timetable['title'] as String;
+      final bytes = await ApiService.instance.downloadTimetableExcel(
+        timetableId: timetableId,
+      );
+      await FileExportService.instance.saveAndOpen(
+        fileName:
+            '${title.toLowerCase().replaceAll(' ', '_')}_$timetableId.xlsx',
+        bytes: bytes,
+        mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error.toString().replaceFirst('Exception: ', '');
+      setState(() => _errorMessage = message);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted && showLoading) {
+        setState(() => _isOpeningExcel = false);
+      }
+    }
+  }
+
+  Future<void> _confirmClearTimetable() async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear timetable?'),
+        content: const Text(
+          'This will remove the generated timetable and invigilator assignments.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldClear == true) {
+      await _clearTimetable();
+    }
+  }
+
+  Future<void> _clearTimetable() async {
+    setState(() {
+      _isClearingTimetable = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ApiService.instance.clearGeneratedTimetables();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _timetables = const []);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generated timetable cleared.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error.toString().replaceFirst('Exception: ', '');
+      setState(() => _errorMessage = message);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() => _isClearingTimetable = false);
+      }
+    }
+  }
+
+  bool _isWizardReady() {
+    return _hasData(_lecturersController, _lecturerFiles) &&
+        _hasData(_venuesController, _venueFiles) &&
+        _hasData(_coursesController, _courseFiles) &&
+        _hasData(_programmesController, _programmeFiles) &&
+        _hasData(_courseLecturersController, _courseLecturerFiles) &&
+        _timeSlotsController.text.trim().isNotEmpty &&
+        _startDate != null &&
+        _endDate != null &&
+        !_endDate!.isBefore(_startDate!);
+  }
+
+  bool _hasData(TextEditingController controller, List<PlatformFile> files) {
+    return controller.text.trim().isNotEmpty || files.isNotEmpty;
+  }
+
+  List<AllocationUpload> _selectedUploads() {
+    AllocationUpload upload(PlatformFile file, String category) {
+      return AllocationUpload(
+        name: file.name,
+        category: category,
+        path: file.path,
+        bytes: file.bytes,
+      );
+    }
+
+    return [
+      ..._lecturerFiles.map((file) => upload(file, 'lecturer')),
+      ..._venueFiles.map((file) => upload(file, 'venue')),
+      ..._courseFiles.map((file) => upload(file, 'course')),
+      ..._programmeFiles.map((file) => upload(file, 'programme')),
+      ..._courseLecturerFiles.map(
+        (file) => upload(file, 'course_lecturer'),
+      ),
+    ];
+  }
+
+  String _apiDate(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _displayDate(DateTime? date) {
+    return date == null ? 'Select date' : _apiDate(date);
+  }
+
+  void _continueWizard() {
+    if (_currentStep == 7) {
+      _runAutoAllocation();
+      return;
+    }
+    setState(() => _currentStep += 1);
+  }
+
+  void _cancelWizard() {
+    if (_currentStep == 0) {
+      return;
+    }
+    setState(() => _currentStep -= 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModuleShell(
+      title: 'Automated Allocation',
+      description:
+          'Generate exam timetables, venues, and invigilator allocations.',
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          _buildWizard(colorScheme),
+          const SizedBox(height: 20),
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Text(_errorMessage!, textAlign: TextAlign.center),
+            ),
+          if (!_isLoading) _buildTimetableState(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWizard(ColorScheme colorScheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.10)),
+      ),
+      child: Stepper(
+        physics: const NeverScrollableScrollPhysics(),
+        currentStep: _currentStep,
+        onStepTapped: (step) => setState(() => _currentStep = step),
+        onStepContinue: _isCalculating ? null : _continueWizard,
+        onStepCancel: _isCalculating ? null : _cancelWizard,
+        controlsBuilder: (context, details) {
+          final isLastStep = _currentStep == 7;
+          return Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  onPressed: details.onStepContinue,
+                  icon: _isCalculating
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(isLastStep ? Icons.bolt : Icons.arrow_forward),
+                  label: Text(
+                    _isCalculating
+                        ? 'Running...'
+                        : isLastStep
+                        ? 'Run Smart Allocation'
+                        : 'Next',
+                  ),
+                ),
+                if (_currentStep > 0)
+                  TextButton(
+                    onPressed: details.onStepCancel,
+                    child: const Text('Back'),
+                  ),
+              ],
+            ),
+          );
+        },
+        steps: [
+          Step(
+            title: const Text('Lecturers'),
+            isActive: _currentStep >= 0,
+            content: _buildTextAndFilesStep(
+              label: 'Lecturers',
+              controller: _lecturersController,
+              group: _AllocationFileGroup.lecturers,
+              files: _lecturerFiles,
+            ),
+          ),
+          Step(
+            title: const Text('Venues'),
+            isActive: _currentStep >= 1,
+            content: _buildTextAndFilesStep(
+              label: 'Venues',
+              controller: _venuesController,
+              group: _AllocationFileGroup.venues,
+              files: _venueFiles,
+            ),
+          ),
+          Step(
+            title: const Text('Courses'),
+            isActive: _currentStep >= 2,
+            content: _buildTextAndFilesStep(
+              label: 'Courses',
+              controller: _coursesController,
+              group: _AllocationFileGroup.courses,
+              files: _courseFiles,
+            ),
+          ),
+          Step(
+            title: const Text('Programmes'),
+            isActive: _currentStep >= 3,
+            content: _buildTextAndFilesStep(
+              label: 'Programme data',
+              controller: _programmesController,
+              group: _AllocationFileGroup.programmes,
+              files: _programmeFiles,
+              hintText:
+                  'Course code, Programme, Level\nCSC301, Computer Science, Level 300',
+            ),
+          ),
+          Step(
+            title: const Text('Course Lecturers'),
+            isActive: _currentStep >= 4,
+            content: _buildTextAndFilesStep(
+              label: 'Course and lecturer data',
+              controller: _courseLecturersController,
+              group: _AllocationFileGroup.courseLecturers,
+              files: _courseLecturerFiles,
+              hintText:
+                  'Course code, Lecturer\nCSC301, Dr. Ama Mensah',
+            ),
+          ),
+          Step(
+            title: const Text('Time Slots'),
+            isActive: _currentStep >= 5,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildFieldLabel('Time slots'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _timeSlotsController,
+                  decoration: const InputDecoration(
+                    hintText: '07:00, 12:00, 16:00',
+                    prefixIcon: Icon(Icons.schedule),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Each exam session is limited to a maximum of 2 hours.',
+                ),
+              ],
+            ),
+          ),
+          Step(
+            title: const Text('Semester'),
+            isActive: _currentStep >= 6,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildFieldLabel('Semester'),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedSemester,
+                  decoration: const InputDecoration(
+                    hintText: 'Select semester',
+                    prefixIcon: Icon(Icons.school_outlined),
+                  ),
+                  items: _semesterOptions
+                      .map(
+                        (semester) => DropdownMenuItem(
+                          value: semester,
+                          child: Text(semester),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (semester) {
+                    if (semester == null) {
+                      return;
+                    }
+                    setState(() => _selectedSemester = semester);
+                  },
+                ),
+              ],
+            ),
+          ),
+          Step(
+            title: const Text('Dates'),
+            isActive: _currentStep >= 7,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildFieldLabel('Timetable title'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.title),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _selectDate(isStartDate: true),
+                      icon: const Icon(Icons.event),
+                      label: Text('Start: ${_displayDate(_startDate)}'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _selectDate(isStartDate: false),
+                      icon: const Icon(Icons.event_available),
+                      label: Text('End: ${_displayDate(_endDate)}'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextAndFilesStep({
+    required String label,
+    required TextEditingController controller,
+    required _AllocationFileGroup group,
+    required List<PlatformFile> files,
+    String? hintText,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildFieldLabel(label),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          minLines: 4,
+          maxLines: 8,
+          decoration: InputDecoration(
+            alignLabelWithHint: true,
+            hintText: hintText,
+            prefixIcon: const Padding(
+              padding: EdgeInsets.only(bottom: 82),
+              child: Icon(Icons.notes),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => _pickFiles(group),
+          icon: const Icon(Icons.upload_file),
+          label: const Text('Attach Excel, CSV, Word, or PDF'),
+        ),
+        if (files.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: files
+                .map(
+                  (file) => InputChip(
+                    avatar: const Icon(Icons.description_outlined, size: 18),
+                    label: Text(file.name),
+                    onDeleted: () => _removeFile(group, file),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFieldLabel(String label) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  Widget _buildTimetableState(ColorScheme colorScheme) {
+    if (_timetables.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: colorScheme.primary.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primary.withValues(alpha: 0.15),
+                    colorScheme.secondary.withValues(alpha: 0.22),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                Icons.meeting_room_rounded,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'No allocation records available yet.',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: _timetables
+          .map(
+            (timetable) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      timetable['title'] as String,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(timetable['exam_period'] as String),
+                    const SizedBox(height: 10),
+                    Text(
+                      '${(timetable['entries'] as List<dynamic>).length} exam entries',
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _isOpeningExcel
+                              ? null
+                              : () => _openTimetableExcel(timetable),
+                          icon: _isOpeningExcel
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.table_view_outlined),
+                          label: Text(
+                            _isOpeningExcel
+                                ? 'Opening Excel...'
+                                : 'Open Excel Timetable',
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _isClearingTimetable
+                              ? null
+                              : _confirmClearTimetable,
+                          icon: _isClearingTimetable
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.delete_outline),
+                          label: Text(
+                            _isClearingTimetable
+                                ? 'Clearing...'
+                                : 'Clear Timetable',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+enum _AllocationFileGroup {
+  lecturers,
+  venues,
+  courses,
+  programmes,
+  courseLecturers,
+}

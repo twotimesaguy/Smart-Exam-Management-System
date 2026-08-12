@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "C:/Users/nbw3/Desktop/dev/flutter_application_1/linux",
+    "terminal.integrated.env.windows": {
+        "Path": "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\bin;C:\\Users\\nbw3\\Desktop\\dev\\flutter\\bin;${env:Path}"
+    }
+}

@@ -1,11 +1,14 @@
-import 'dart:typed_data';
-
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/api_service.dart';
 import 'package:flutter_application_1/local_auth.dart';
 import 'package:flutter_application_1/module_shell.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:http/http.dart' as http;
 
 class MalpReporting extends StatefulWidget {
   const MalpReporting({this.currentUser, super.key});
@@ -28,14 +31,18 @@ class _MalpReportingState extends State<MalpReporting> {
   final TextEditingController _statementController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
   final SpeechToText _speechToText = SpeechToText();
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   XFile? _studentFaceImage;
   Uint8List? _studentFacePreviewBytes;
   XFile? _foreignMaterialImage;
   Uint8List? _foreignMaterialPreviewBytes;
-  bool _isListening = false;
+  bool _isRecordingVoiceNote = false;
   bool _speechAvailable = false;
   bool _isSubmitting = false;
+  String? _voiceRecordingPath;
+  Uint8List? _voiceRecordingBytes;
+  String? _voiceRecordingFileName;
   String _speechStatus = "Record the student's statement";
 
   @override
@@ -55,6 +62,7 @@ class _MalpReportingState extends State<MalpReporting> {
     _incidentController.dispose();
     _statementController.dispose();
     _speechToText.stop();
+    unawaited(_audioRecorder.dispose());
     super.dispose();
   }
 
@@ -96,15 +104,45 @@ class _MalpReportingState extends State<MalpReporting> {
   }
 
   Future<void> _toggleVoiceNote() async {
-    if (_isListening) {
+    if (_isRecordingVoiceNote) {
       await _speechToText.stop();
+      final recordingPath = await _audioRecorder.stop();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _isListening = false;
-        _speechStatus = "Voice note captured and transcribed";
-      });
+
+      if (recordingPath == null) {
+        setState(() {
+          _isRecordingVoiceNote = false;
+          _speechStatus = 'Voice recording could not be saved.';
+        });
+        return;
+      }
+
+      try {
+        final recordingBytes = kIsWeb
+            ? await _readWebRecording(recordingPath)
+            : null;
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _isRecordingVoiceNote = false;
+          _voiceRecordingPath = kIsWeb ? null : recordingPath;
+          _voiceRecordingBytes = recordingBytes;
+          _voiceRecordingFileName = kIsWeb
+              ? 'student_statement.webm'
+              : 'student_statement.m4a';
+          _speechStatus = 'Voice note saved and transcribed.';
+        });
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _isRecordingVoiceNote = false;
+            _speechStatus = 'The recording was made but could not be prepared for upload.';
+          });
+        }
+      }
       return;
     }
 
@@ -117,8 +155,7 @@ class _MalpReportingState extends State<MalpReporting> {
             }
             if (status == "done" || status == "notListening") {
               setState(() {
-                _isListening = false;
-                _speechStatus = "Voice note captured and transcribed";
+                _speechStatus = "Transcription paused. Stop the voice note to save it.";
               });
             }
           },
@@ -127,7 +164,6 @@ class _MalpReportingState extends State<MalpReporting> {
               return;
             }
             setState(() {
-              _isListening = false;
               _speechStatus = "Voice note unavailable: ${error.errorMsg}";
             });
           },
@@ -146,9 +182,34 @@ class _MalpReportingState extends State<MalpReporting> {
     }
 
     _speechAvailable = true;
+    if (!await _audioRecorder.hasPermission()) {
+      if (mounted) {
+        setState(() {
+          _speechStatus = 'Microphone permission is required to save the voice recording.';
+        });
+      }
+      return;
+    }
+    try {
+      final recordingPath = await _recordingPath();
+      await _audioRecorder.start(
+        RecordConfig(
+          encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc,
+        ),
+        path: recordingPath,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _speechStatus = 'Unable to start the voice recorder. Check microphone permission.';
+        });
+      }
+      return;
+    }
+
     setState(() {
-      _isListening = true;
-      _speechStatus = "Listening to the student's statement...";
+      _isRecordingVoiceNote = true;
+      _speechStatus = "Recording and transcribing the student's statement...";
     });
 
     await _speechToText.listen(
@@ -170,6 +231,22 @@ class _MalpReportingState extends State<MalpReporting> {
     );
   }
 
+  Future<String> _recordingPath() async {
+    if (kIsWeb) {
+      return '';
+    }
+    final directory = await getTemporaryDirectory();
+    return '${directory.path}/student_statement_${DateTime.now().millisecondsSinceEpoch}.m4a';
+  }
+
+  Future<Uint8List> _readWebRecording(String path) async {
+    final response = await http.get(Uri.parse(path));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Could not read the browser recording.');
+    }
+    return response.bodyBytes;
+  }
+
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -189,6 +266,9 @@ class _MalpReportingState extends State<MalpReporting> {
         studentStatement: _statementController.text.trim(),
         studentFaceImagePath: _studentFaceImage?.path,
         foreignMaterialImagePath: _foreignMaterialImage?.path,
+        studentStatementAudioPath: _voiceRecordingPath,
+        studentStatementAudioBytes: _voiceRecordingBytes,
+        studentStatementAudioFileName: _voiceRecordingFileName,
       );
 
       if (!mounted) {
@@ -201,6 +281,9 @@ class _MalpReportingState extends State<MalpReporting> {
         _studentFacePreviewBytes = null;
         _foreignMaterialImage = null;
         _foreignMaterialPreviewBytes = null;
+        _voiceRecordingPath = null;
+        _voiceRecordingBytes = null;
+        _voiceRecordingFileName = null;
         _invigilatorController.text = widget.currentUser?.username ?? '';
       });
 
@@ -359,18 +442,25 @@ class _MalpReportingState extends State<MalpReporting> {
                       FilledButton.icon(
                         onPressed: _toggleVoiceNote,
                         icon: Icon(
-                          _isListening
+                          _isRecordingVoiceNote
                               ? Icons.stop_circle_outlined
                               : Icons.mic_none,
                         ),
                         label: Text(
-                          _isListening
+                          _isRecordingVoiceNote
                               ? "Stop Voice Note"
                               : "Record Voice Note",
                         ),
                       ),
                     ],
                   ),
+                  if (_voiceRecordingPath != null || _voiceRecordingBytes != null) ...[
+                    SizedBox(height: sectionGap),
+                    Text(
+                      'Voice recording attached. The disciplinary officer can play it from the case.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
                   if (_studentFacePreviewBytes != null) ...[
                     SizedBox(height: sectionGap),
                     Text(

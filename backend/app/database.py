@@ -172,6 +172,9 @@ def init_db() -> None:
                 student_statement TEXT NOT NULL,
                 student_face_image_path TEXT,
                 foreign_material_image_path TEXT,
+                student_statement_audio BYTEA,
+                student_statement_audio_content_type TEXT,
+                student_statement_audio_filename TEXT,
                 forwarded_status TEXT NOT NULL DEFAULT 'pending',
                 forwarded_error TEXT,
                 case_status TEXT NOT NULL DEFAULT 'pending'
@@ -208,6 +211,13 @@ def _add_missing_columns(db: DatabaseConnection) -> None:
     )
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS handled_by TEXT")
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS handled_at TEXT")
+    db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio BYTEA")
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio_content_type TEXT"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio_filename TEXT"
+    )
 
 
 def _seed_allocation_setup(db: DatabaseConnection) -> None:

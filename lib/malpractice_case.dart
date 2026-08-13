@@ -58,6 +58,7 @@ class MalpracticeCase {
     required this.createdAt,
     this.studentFaceImageUrl,
     this.foreignMaterialImageUrl,
+    this.studentStatementAudioUrl,
     this.forwardedError,
     this.resolutionNotes,
     this.handledBy,
@@ -76,6 +77,7 @@ class MalpracticeCase {
   final String forwardedStatus;
   final String? studentFaceImageUrl;
   final String? foreignMaterialImageUrl;
+  final String? studentStatementAudioUrl;
   final String? forwardedError;
   final MalpracticeCaseStatus status;
   final String? resolutionNotes;
@@ -87,6 +89,7 @@ class MalpracticeCase {
     Map<String, dynamic> json, {
     String? studentFaceImageUrl,
     String? foreignMaterialImageUrl,
+    String? studentStatementAudioUrl,
   }) {
     return MalpracticeCase(
       id: json['id'] as int,
@@ -101,6 +104,7 @@ class MalpracticeCase {
       forwardedStatus: json['forwarded_status'] as String? ?? 'pending',
       studentFaceImageUrl: studentFaceImageUrl,
       foreignMaterialImageUrl: foreignMaterialImageUrl,
+      studentStatementAudioUrl: studentStatementAudioUrl,
       forwardedError: json['forwarded_error'] as String?,
       status: malpracticeCaseStatusFromApiValue(json['case_status'] as String?),
       resolutionNotes: json['resolution_notes'] as String?,

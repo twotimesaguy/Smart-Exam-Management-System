@@ -282,6 +282,9 @@ class ApiService {
     required String studentStatement,
     String? studentFaceImagePath,
     String? foreignMaterialImagePath,
+    String? studentStatementAudioPath,
+    List<int>? studentStatementAudioBytes,
+    String? studentStatementAudioFileName,
   }) async {
     final request = http.MultipartRequest('POST', _uri('/malpractice/reports'))
       ..fields.addAll({
@@ -308,6 +311,23 @@ class ApiService {
         await http.MultipartFile.fromPath(
           'foreign_material_image',
           foreignMaterialImagePath,
+        ),
+      );
+    }
+    if (studentStatementAudioBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'student_statement_audio',
+          studentStatementAudioBytes,
+          filename: studentStatementAudioFileName ?? 'student_statement.webm',
+        ),
+      );
+    } else if (studentStatementAudioPath != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'student_statement_audio',
+          studentStatementAudioPath,
+          filename: studentStatementAudioFileName ?? 'student_statement.m4a',
         ),
       );
     }
@@ -498,6 +518,10 @@ class ApiService {
         'foreign-material',
         data['foreign_material_image_path'],
       ),
+      studentStatementAudioUrl: _malpracticeStatementAudioUrl(
+        id,
+        data['student_statement_audio_filename'],
+      ),
     );
   }
 
@@ -512,5 +536,12 @@ class ApiService {
     return _uri(
       '/malpractice/reports/$reportId/evidence/$evidenceType',
     ).toString();
+  }
+
+  String? _malpracticeStatementAudioUrl(int reportId, Object? filename) {
+    if (filename == null || filename.toString().trim().isEmpty) {
+      return null;
+    }
+    return _uri('/malpractice/reports/$reportId/statement-audio').toString();
   }
 }

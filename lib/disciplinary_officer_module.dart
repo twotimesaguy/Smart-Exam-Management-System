@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api_service.dart';
 import 'package:flutter_application_1/file_export_service.dart';
@@ -363,6 +366,10 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
               ),
               const SizedBox(height: 6),
               Text(report.studentStatement),
+              if (report.studentStatementAudioUrl != null) ...[
+                const SizedBox(height: 12),
+                _VoiceRecordingPlayer(audioUrl: report.studentStatementAudioUrl!),
+              ],
               const SizedBox(height: 18),
               DropdownButtonFormField<MalpracticeCaseStatus>(
                 initialValue: _status,
@@ -412,6 +419,74 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VoiceRecordingPlayer extends StatefulWidget {
+  const _VoiceRecordingPlayer({required this.audioUrl});
+
+  final String audioUrl;
+
+  @override
+  State<_VoiceRecordingPlayer> createState() => _VoiceRecordingPlayerState();
+}
+
+class _VoiceRecordingPlayerState extends State<_VoiceRecordingPlayer> {
+  final AudioPlayer _player = AudioPlayer();
+  late final StreamSubscription<void> _completedSubscription;
+  bool _isPlaying = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _completedSubscription = _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _completedSubscription.cancel();
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlayback() async {
+    setState(() => _isLoading = true);
+    try {
+      if (_isPlaying) {
+        await _player.pause();
+        if (mounted) {
+          setState(() => _isPlaying = false);
+        }
+      } else {
+        await _player.play(UrlSource(widget.audioUrl));
+        if (mounted) {
+          setState(() => _isPlaying = true);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: _isLoading ? null : _togglePlayback,
+      icon: _isLoading
+          ? const SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(_isPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline),
+      label: Text(_isPlaying ? 'Pause student recording' : 'Play student recording'),
     );
   }
 }

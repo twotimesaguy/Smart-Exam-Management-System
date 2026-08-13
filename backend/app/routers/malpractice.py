@@ -1,8 +1,9 @@
+import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.database import get_connection
 from app.schemas import MalpracticeStatusUpdate
@@ -24,9 +25,13 @@ async def create_malpractice_report(
     student_statement: str = Form(...),
     student_face_image: UploadFile | None = File(None),
     foreign_material_image: UploadFile | None = File(None),
+    student_statement_audio: UploadFile | None = File(None),
 ) -> dict:
     student_face_path = await _save_optional_file("student_face", student_id, student_face_image)
     material_path = await _save_optional_file("foreign_material", student_id, foreign_material_image)
+    audio_bytes, audio_content_type, audio_filename = await _read_optional_audio(
+        student_statement_audio
+    )
 
     with get_connection() as db:
         cursor = db.execute(
@@ -34,8 +39,9 @@ async def create_malpractice_report(
             INSERT INTO malpractice_reports
                 (student_id, student_level, course_title, course_code, venue, invigilator_name,
                  incident_description, student_statement, student_face_image_path,
-                 foreign_material_image_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 foreign_material_image_path, student_statement_audio,
+                 student_statement_audio_content_type, student_statement_audio_filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             """,
             (
@@ -49,12 +55,15 @@ async def create_malpractice_report(
                 student_statement,
                 str(student_face_path) if student_face_path else None,
                 str(material_path) if material_path else None,
+                audio_bytes,
+                audio_content_type,
+                audio_filename,
             ),
         )
         row = cursor.fetchone()
         report_id = row["id"]
 
-    report_payload = dict(row)
+    report_payload = _report_payload(row)
     status, error = await forward_report(report_payload)
 
     with get_connection() as db:
@@ -71,7 +80,7 @@ async def create_malpractice_report(
             (report_id,),
         ).fetchone()
 
-    return dict(updated)
+    return _report_payload(updated)
 
 
 @router.get("/reports")
@@ -80,7 +89,7 @@ def list_malpractice_reports() -> list[dict]:
         rows = db.execute(
             "SELECT * FROM malpractice_reports ORDER BY created_at DESC"
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_report_payload(row) for row in rows]
 
 
 @router.get("/reports/export/pdf")
@@ -124,6 +133,30 @@ def get_malpractice_evidence(report_id: int, evidence_type: str) -> FileResponse
     return FileResponse(path)
 
 
+@router.get("/reports/{report_id}/statement-audio")
+def get_student_statement_audio(report_id: int) -> Response:
+    with get_connection() as db:
+        row = db.execute(
+            """
+            SELECT student_statement_audio, student_statement_audio_content_type,
+                   student_statement_audio_filename
+            FROM malpractice_reports
+            WHERE id = ?
+            """,
+            (report_id,),
+        ).fetchone()
+
+    if row is None or row["student_statement_audio"] is None:
+        raise HTTPException(status_code=404, detail="Voice recording not found.")
+
+    filename = Path(row["student_statement_audio_filename"] or "student_statement.m4a").name
+    return Response(
+        content=bytes(row["student_statement_audio"]),
+        media_type=row["student_statement_audio_content_type"] or "audio/mp4",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.patch("/reports/{report_id}")
 def update_malpractice_report(
     report_id: int,
@@ -155,7 +188,7 @@ def update_malpractice_report(
             ),
         ).fetchone()
 
-    return dict(updated)
+    return _report_payload(updated)
 
 
 @router.post("/reports/{report_id}/forward")
@@ -168,7 +201,7 @@ async def forward_existing_report(report_id: int) -> dict:
         if row is None:
             raise HTTPException(status_code=404, detail="Report not found.")
 
-    status, error = await forward_report(dict(row))
+    status, error = await forward_report(_report_payload(row))
 
     with get_connection() as db:
         db.execute(
@@ -180,7 +213,7 @@ async def forward_existing_report(report_id: int) -> dict:
             (report_id,),
         ).fetchone()
 
-    return dict(updated)
+    return _report_payload(updated)
 
 
 async def _save_optional_file(
@@ -197,3 +230,35 @@ async def _save_optional_file(
     path = evidence_dir / f"{student_id}_{evidence_type}_{uuid4().hex}{extension}"
     path.write_bytes(await upload.read())
     return path
+
+
+async def _read_optional_audio(
+    upload: UploadFile | None,
+) -> tuple[bytes | None, str | None, str | None]:
+    if upload is None:
+        return None, None, None
+
+    audio_bytes = await upload.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="The voice recording is empty.")
+    if len(audio_bytes) > 15 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="The voice recording is too large. Keep it under 15 MB.",
+        )
+
+    filename = Path(upload.filename or "student_statement.m4a").name
+    guessed_content_type = mimetypes.guess_type(filename)[0]
+    content_type = (
+        upload.content_type
+        if upload.content_type and upload.content_type.startswith("audio/")
+        else guessed_content_type or "audio/mp4"
+    )
+    return audio_bytes, content_type, filename
+
+
+def _report_payload(row) -> dict:
+    """Return report metadata without sending the audio blob in JSON/webhooks."""
+    report = dict(row)
+    report.pop("student_statement_audio", None)
+    return report

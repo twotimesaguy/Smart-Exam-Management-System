@@ -1,8 +1,8 @@
-import sqlite3
+from typing import Any
 
 
 def notify_user(
-    db: sqlite3.Connection,
+    db: Any,
     *,
     username: str,
     title: str,
@@ -18,7 +18,7 @@ def notify_user(
 
 
 def notify_role(
-    db: sqlite3.Connection,
+    db: Any,
     *,
     role: str,
     title: str,

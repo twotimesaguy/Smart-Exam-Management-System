@@ -153,7 +153,7 @@ def update_malpractice_report(
             SET case_status = ?,
                 resolution_notes = ?,
                 handled_by = ?,
-                handled_at = CURRENT_TIMESTAMP
+                handled_at = CURRENT_TIMESTAMP::text
             WHERE id = ?
             RETURNING *
             """,

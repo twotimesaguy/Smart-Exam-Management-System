@@ -1,7 +1,7 @@
-import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
+from psycopg.errors import UniqueViolation
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
@@ -41,10 +41,13 @@ def signup(payload: UserCreate) -> AuthResponse:
 
             if payload.role == "invigilator":
                 db.execute(
-                    "INSERT OR IGNORE INTO allocation_invigilators (username) VALUES (?)",
+                    """
+                    INSERT INTO allocation_invigilators (username) VALUES (?)
+                    ON CONFLICT (username) DO NOTHING
+                    """,
                     (username,),
                 )
-    except sqlite3.IntegrityError:
+    except UniqueViolation:
         raise HTTPException(status_code=409, detail="Username already exists.")
 
     return AuthResponse(

@@ -63,7 +63,7 @@ async def recognize_student(
             FROM attendance_records
             WHERE student_id = ?
               AND course_code = ?
-              AND date(recorded_at) = ?
+              AND recorded_at::date = ?::date
             LIMIT 1
             """,
             (best_student["student_id"], exam["course_code"], exam["exam_date"]),

@@ -13,7 +13,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-By default, the API uses SQLite at `backend/data/exam_system.db`.
+The API uses PostgreSQL. On Railway, add a PostgreSQL service and reference its
+automatically supplied `DATABASE_URL` in this API service. The schema and its
+initial allocation data are created automatically at startup.
 
 API docs will be available at:
 
@@ -52,14 +54,18 @@ The facial recognition service currently has a deterministic fallback so the
 API can run immediately. Install `insightface` and `onnxruntime` when you are
 ready to use real face embeddings.
 
-## SQLite setup
+## PostgreSQL setup
 
-Create `backend/.env` from `.env.example` if you want to customize the database
-file location:
+Create `backend/.env` from `.env.example` and set a PostgreSQL connection URL
+when running locally:
 
 ```text
-DATABASE_PATH="data/exam_system.db"
+DATABASE_URL="postgresql://postgres:password@localhost:5432/exam_system"
 ```
+
+For Railway, create a PostgreSQL database, then add its `DATABASE_URL` as a
+variable/reference on the backend service. Do not set `DATABASE_PATH`; SQLite
+is no longer used.
 
 Timetable generation runs locally in FastAPI. It extracts the lecturer, venue,
 and course records from the uploaded Excel, CSV, Word, or text-based PDF files,

@@ -110,7 +110,7 @@ class _AuthPageState extends State<AuthPage> {
                             child: SizedBox.square(
                               dimension: 104,
                               child: Image.asset(
-                                'assets/logo.jpg',
+                                'assets/applogo_transparent.png',
                                 fit: BoxFit.cover,
                               ),
                             ),

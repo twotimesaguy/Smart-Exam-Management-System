@@ -7,7 +7,6 @@ from fastapi.responses import FileResponse
 from app.database import get_connection
 from app.schemas import MalpracticeStatusUpdate
 from app.services.malpractice_forwarder import forward_report
-from app.services.notifications import notify_role
 from app.services.pdf_export import build_malpractice_pdf
 
 router = APIRouter(prefix="/malpractice", tags=["malpractice"])
@@ -54,15 +53,6 @@ async def create_malpractice_report(
         )
         row = cursor.fetchone()
         report_id = row["id"]
-        notify_role(
-            db,
-            role="disciplinary_officer",
-            title="New malpractice report",
-            message=(
-                f"{invigilator_name} reported {student_id} for "
-                f"{course_code} at {venue}."
-            ),
-        )
 
     report_payload = dict(row)
     status, error = await forward_report(report_payload)

@@ -11,7 +11,6 @@ from openpyxl import load_workbook
 from app.database import clear_expired_timetables, get_connection
 from app.schemas import CourseInput, TimetableOut, TimetableRequest, VenueInput
 from app.services.excel_export import build_timetable_workbook
-from app.services.notifications import notify_role, notify_user
 from app.services.timetable import (
     generate_timetable_entries,
     generate_wizard_timetable_entries,
@@ -143,25 +142,6 @@ def _save_generated_timetable(
             db.execute(
                 "INSERT INTO assignments (timetable_entry_id, invigilator_username) VALUES (?, ?)",
                 (entry_id, entry.invigilator_username),
-            )
-            assignment_message = (
-                f"You have been allocated to {entry.course_code} at {entry.venue} "
-                f"on {entry.exam_date} from {entry.start_time} to {entry.end_time}."
-            )
-            notify_user(
-                db,
-                username=entry.invigilator_username,
-                title="Invigilation allocation",
-                message=assignment_message,
-            )
-            notify_role(
-                db,
-                role="disciplinary_officer",
-                title="Invigilator allocated",
-                message=(
-                    f"{entry.invigilator_username} was allocated to "
-                    f"{entry.course_code} at {entry.venue}."
-                ),
             )
             saved_entries.append(entry.model_copy(update={"id": entry_id}))
 

@@ -24,14 +24,6 @@ class AuthResponse(BaseModel):
     token: str
 
 
-class NotificationOut(BaseModel):
-    id: int
-    title: str
-    message: str
-    is_read: bool
-    created_at: str
-
-
 class StudentOut(BaseModel):
     student_id: str
     full_name: str

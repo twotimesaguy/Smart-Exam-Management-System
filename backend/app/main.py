@@ -8,7 +8,6 @@ from app.routers import (
     attendance,
     auth,
     malpractice,
-    notifications,
     students,
 )
 
@@ -39,4 +38,3 @@ app.include_router(allocation.router)
 app.include_router(attendance.router)
 app.include_router(malpractice.router)
 app.include_router(assignments.router)
-app.include_router(notifications.router)

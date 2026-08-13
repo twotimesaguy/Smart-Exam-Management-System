@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_application_1/app_notification.dart';
 import 'package:flutter_application_1/assignment_registry.dart';
 import 'package:flutter_application_1/local_auth.dart';
 import 'package:flutter_application_1/malpractice_case.dart';
@@ -236,22 +235,6 @@ class ApiService {
 
   Future<Uint8List> downloadTimetableExcel({required int timetableId}) {
     return _getBytes('/allocation/timetable/$timetableId/excel');
-  }
-
-  Future<List<AppNotification>> fetchNotifications(LocalUser user) async {
-    final data =
-        await _getJson('/notifications', {
-              'username': user.username,
-              'role': user.role.apiValue,
-            })
-            as List<dynamic>;
-    return data
-        .map((item) => AppNotification.fromJson(item as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<void> markNotificationRead(int notificationId) async {
-    await _patchJson('/notifications/$notificationId/read', {});
   }
 
   Future<void> clearGeneratedTimetables() async {

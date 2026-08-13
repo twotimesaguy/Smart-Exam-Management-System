@@ -1,0 +1,37 @@
+name: Deploy Flutter web to Netlify
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Flutter packages
+        run: flutter pub get
+
+      - name: Build web app
+        run: >
+          flutter build web --release
+          --dart-define=API_BASE_URL=https://flutterapplication1-production-8866.up.railway.app
+
+      - name: Deploy to Netlify
+        run: npx --yes netlify-cli deploy --dir=build/web --prod
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

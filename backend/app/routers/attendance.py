@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -9,6 +10,7 @@ from app.services.face_recognition import face_service
 from app.services.pdf_export import build_attendance_pdf
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/recognize", response_model=RecognizedStudentOut)
@@ -16,11 +18,7 @@ async def recognize_student(
     recorded_by: str = Form("System"),
     face_image: UploadFile = File(...),
 ) -> RecognizedStudentOut:
-    image_bytes = await face_image.read()
-    try:
-        captured_embedding = face_service.embedding_from_bytes(image_bytes)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    captured_embedding = await _embedding_from_upload(face_image)
 
     with get_connection() as db:
         students = db.execute(
@@ -166,6 +164,23 @@ def _normalise_level(value: str) -> str:
     return "".join(character for character in cleaned if character.isalnum())
 
 
+async def _embedding_from_upload(face_image: UploadFile) -> list[float]:
+    image_bytes = await face_image.read()
+    try:
+        return face_service.embedding_from_bytes(image_bytes)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Unable to process an attendance face image")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "The face photo could not be processed. Capture a clear JPEG "
+                "or PNG photo and try again."
+            ),
+        ) from error
+
+
 @router.post("/record", response_model=AttendanceOut)
 def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
     with get_connection() as db:
@@ -210,11 +225,7 @@ async def recognize_and_record(
     recorded_by: str = Form(...),
     face_image: UploadFile = File(...),
 ) -> AttendanceOut:
-    image_bytes = await face_image.read()
-    try:
-        captured_embedding = face_service.embedding_from_bytes(image_bytes)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    captured_embedding = await _embedding_from_upload(face_image)
 
     with get_connection() as db:
         students = db.execute(

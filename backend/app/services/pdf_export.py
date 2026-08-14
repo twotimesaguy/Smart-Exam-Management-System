@@ -64,6 +64,7 @@ def build_attendance_pdf(
         }
     )
     lecturer_name = ", ".join(lecturer_names) or "Not available"
+    title = "ATTENDANCE LIST"
     subtitle = (
         f"Course Title: {resolved_course_title or 'Not available'}<br/>"
         f"Course Code: {course_code}<br/>"
@@ -192,7 +193,10 @@ def _student_image(image_path: str | None) -> ReportLabImage | str:
     if not path.exists() or not path.is_file():
         return ""
 
-    prepared_path, image_width, image_height = _prepare_student_image(path)
+    try:
+        prepared_path, image_width, image_height = _prepare_student_image(path)
+    except (OSError, ValueError):
+        return ""
     display_width, display_height = _fit_size(
         image_width,
         image_height,

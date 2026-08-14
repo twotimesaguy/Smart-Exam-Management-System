@@ -43,6 +43,9 @@ class _MalpReportingState extends State<MalpReporting> {
   String? _voiceRecordingPath;
   Uint8List? _voiceRecordingBytes;
   String? _voiceRecordingFileName;
+  Completer<void>? _transcriptionFinished;
+  bool _hasTranscription = false;
+  String? _speechError;
   String _speechStatus = "Record the student's statement";
 
   @override
@@ -106,6 +109,7 @@ class _MalpReportingState extends State<MalpReporting> {
   Future<void> _toggleVoiceNote() async {
     if (_isRecordingVoiceNote) {
       await _speechToText.stop();
+      await _waitForTranscription();
       final recordingPath = await _audioRecorder.stop();
       if (!mounted) {
         return;
@@ -133,7 +137,11 @@ class _MalpReportingState extends State<MalpReporting> {
           _voiceRecordingFileName = kIsWeb
               ? 'student_statement.webm'
               : 'student_statement.m4a';
-          _speechStatus = 'Voice note saved and transcribed.';
+          _speechStatus = _hasTranscription
+              ? 'Voice note saved and transcribed.'
+              : _speechError == null
+              ? 'Voice note saved, but no speech was recognised. Try again or type the statement.'
+              : 'Voice note saved, but transcription failed: $_speechError';
         });
       } catch (_) {
         if (mounted) {
@@ -154,6 +162,7 @@ class _MalpReportingState extends State<MalpReporting> {
               return;
             }
             if (status == "done" || status == "notListening") {
+              _completeTranscription();
               setState(() {
                 _speechStatus = "Transcription paused. Stop the voice note to save it.";
               });
@@ -164,8 +173,10 @@ class _MalpReportingState extends State<MalpReporting> {
               return;
             }
             setState(() {
+              _speechError = error.errorMsg;
               _speechStatus = "Voice note unavailable: ${error.errorMsg}";
             });
+            _completeTranscription();
           },
         );
 
@@ -182,6 +193,9 @@ class _MalpReportingState extends State<MalpReporting> {
     }
 
     _speechAvailable = true;
+    _transcriptionFinished = Completer<void>();
+    _hasTranscription = false;
+    _speechError = null;
     if (!await _audioRecorder.hasPermission()) {
       if (mounted) {
         setState(() {
@@ -221,13 +235,42 @@ class _MalpReportingState extends State<MalpReporting> {
         if (!mounted) {
           return;
         }
+        final transcript = result.recognizedWords.trim();
+        if (transcript.isEmpty) {
+          if (result.finalResult) {
+            _completeTranscription();
+          }
+          return;
+        }
         setState(() {
-          _statementController.text = result.recognizedWords;
+          _hasTranscription = true;
+          _statementController.text = transcript;
           _statementController.selection = TextSelection.fromPosition(
             TextPosition(offset: _statementController.text.length),
           );
         });
+        if (result.finalResult) {
+          _completeTranscription();
+        }
       },
+    );
+  }
+
+  void _completeTranscription() {
+    final completer = _transcriptionFinished;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+
+  Future<void> _waitForTranscription() async {
+    final completer = _transcriptionFinished;
+    if (completer == null) {
+      return;
+    }
+    await completer.future.timeout(
+      const Duration(milliseconds: 750),
+      onTimeout: () {},
     );
   }
 

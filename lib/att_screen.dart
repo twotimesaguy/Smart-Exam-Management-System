@@ -420,6 +420,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
           final panelRadius = constraints.maxWidth * 0.05;
 
           return ListView(
+            padding: const EdgeInsets.only(top: 10),
             children: [
               Form(
                 key: _attendanceFormKey,
@@ -465,6 +466,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
                     }
 
                     return Wrap(
+                      alignment: WrapAlignment.center,
                       spacing: 12,
                       runSpacing: 12,
                       children: [

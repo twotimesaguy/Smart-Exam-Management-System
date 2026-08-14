@@ -45,6 +45,11 @@ class _MalpReportingState extends State<MalpReporting> {
   String? _voiceRecordingFileName;
   Completer<void>? _transcriptionFinished;
   bool _hasTranscription = false;
+  bool _isStoppingVoiceNote = false;
+  bool _isRestartingSpeech = false;
+  final List<String> _transcriptSegments = [];
+  String _activeTranscript = '';
+  String _statementBeforeRecording = '';
   String? _speechError;
   String _speechStatus = "Record the student's statement";
 
@@ -64,6 +69,7 @@ class _MalpReportingState extends State<MalpReporting> {
     _invigilatorController.dispose();
     _incidentController.dispose();
     _statementController.dispose();
+    _transcriptionFinished?.complete();
     _speechToText.stop();
     unawaited(_audioRecorder.dispose());
     super.dispose();
@@ -108,8 +114,13 @@ class _MalpReportingState extends State<MalpReporting> {
 
   Future<void> _toggleVoiceNote() async {
     if (_isRecordingVoiceNote) {
+      setState(() {
+        _isStoppingVoiceNote = true;
+        _speechStatus = 'Finishing transcription and saving the voice note...';
+      });
       await _speechToText.stop();
       await _waitForTranscription();
+      _finishCurrentSpeechSegment();
       final recordingPath = await _audioRecorder.stop();
       if (!mounted) {
         return;
@@ -118,6 +129,7 @@ class _MalpReportingState extends State<MalpReporting> {
       if (recordingPath == null) {
         setState(() {
           _isRecordingVoiceNote = false;
+          _isStoppingVoiceNote = false;
           _speechStatus = 'Voice recording could not be saved.';
         });
         return;
@@ -132,6 +144,7 @@ class _MalpReportingState extends State<MalpReporting> {
         }
         setState(() {
           _isRecordingVoiceNote = false;
+          _isStoppingVoiceNote = false;
           _voiceRecordingPath = kIsWeb ? null : recordingPath;
           _voiceRecordingBytes = recordingBytes;
           _voiceRecordingFileName = kIsWeb
@@ -147,6 +160,7 @@ class _MalpReportingState extends State<MalpReporting> {
         if (mounted) {
           setState(() {
             _isRecordingVoiceNote = false;
+            _isStoppingVoiceNote = false;
             _speechStatus = 'The recording was made but could not be prepared for upload.';
           });
         }
@@ -162,10 +176,15 @@ class _MalpReportingState extends State<MalpReporting> {
               return;
             }
             if (status == "done" || status == "notListening") {
-              _completeTranscription();
-              setState(() {
-                _speechStatus = "Transcription paused. Stop the voice note to save it.";
-              });
+              _finishCurrentSpeechSegment();
+              if (_isRecordingVoiceNote && !_isStoppingVoiceNote) {
+                setState(() {
+                  _speechStatus = "Still recording. Continuing live transcription...";
+                });
+                unawaited(_restartLiveTranscription());
+              } else {
+                _completeTranscription();
+              }
             }
           },
           onError: (error) {
@@ -176,7 +195,11 @@ class _MalpReportingState extends State<MalpReporting> {
               _speechError = error.errorMsg;
               _speechStatus = "Voice note unavailable: ${error.errorMsg}";
             });
-            _completeTranscription();
+            if (_isRecordingVoiceNote && !_isStoppingVoiceNote) {
+              unawaited(_restartLiveTranscription());
+            } else {
+              _completeTranscription();
+            }
           },
         );
 
@@ -193,8 +216,12 @@ class _MalpReportingState extends State<MalpReporting> {
     }
 
     _speechAvailable = true;
-    _transcriptionFinished = Completer<void>();
     _hasTranscription = false;
+    _isStoppingVoiceNote = false;
+    _isRestartingSpeech = false;
+    _transcriptSegments.clear();
+    _activeTranscript = '';
+    _statementBeforeRecording = _statementController.text.trim();
     _speechError = null;
     if (!await _audioRecorder.hasPermission()) {
       if (mounted) {
@@ -225,34 +252,102 @@ class _MalpReportingState extends State<MalpReporting> {
       _isRecordingVoiceNote = true;
       _speechStatus = "Recording and transcribing the student's statement...";
     });
+    await _startLiveTranscription();
+  }
 
-    await _speechToText.listen(
-      listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.dictation,
-        partialResults: true,
-      ),
-      onResult: (result) {
-        if (!mounted) {
-          return;
-        }
-        final transcript = result.recognizedWords.trim();
-        if (transcript.isEmpty) {
+  Future<void> _startLiveTranscription() async {
+    if (!_isRecordingVoiceNote || _isStoppingVoiceNote || !mounted) {
+      return;
+    }
+
+    _transcriptionFinished = Completer<void>();
+    try {
+      await _speechToText.listen(
+        // Keep the recognizer open until the user taps Stop. Some devices end
+        // a system speech session early; the status listener starts it again.
+        listenFor: const Duration(hours: 24),
+        pauseFor: const Duration(hours: 24),
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        onResult: (result) {
+          if (!mounted) {
+            return;
+          }
+          final transcript = result.recognizedWords.trim();
+          if (transcript.isEmpty) {
+            if (result.finalResult) {
+              _finishCurrentSpeechSegment();
+              _completeTranscription();
+            }
+            return;
+          }
+
+          setState(() {
+            _hasTranscription = true;
+            _activeTranscript = transcript;
+            _updateStudentStatementFromTranscript();
+          });
           if (result.finalResult) {
+            _finishCurrentSpeechSegment();
             _completeTranscription();
           }
-          return;
-        }
-        setState(() {
-          _hasTranscription = true;
-          _statementController.text = transcript;
-          _statementController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _statementController.text.length),
-          );
-        });
-        if (result.finalResult) {
-          _completeTranscription();
-        }
-      },
+        },
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _speechError = error.toString();
+        _speechStatus = 'Live transcription could not start: $_speechError';
+      });
+      _completeTranscription();
+    }
+  }
+
+  Future<void> _restartLiveTranscription() async {
+    if (_isRestartingSpeech || !_isRecordingVoiceNote || _isStoppingVoiceNote) {
+      return;
+    }
+
+    _isRestartingSpeech = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await _startLiveTranscription();
+    } finally {
+      _isRestartingSpeech = false;
+    }
+  }
+
+  void _finishCurrentSpeechSegment() {
+    final transcript = _activeTranscript.trim();
+    if (transcript.isEmpty) {
+      return;
+    }
+    if (_transcriptSegments.isEmpty || _transcriptSegments.last != transcript) {
+      _transcriptSegments.add(transcript);
+    }
+    _activeTranscript = '';
+    if (mounted) {
+      setState(_updateStudentStatementFromTranscript);
+    }
+  }
+
+  void _updateStudentStatementFromTranscript() {
+    final transcript = [
+      ..._transcriptSegments,
+      if (_activeTranscript.trim().isNotEmpty) _activeTranscript.trim(),
+    ].join(' ').trim();
+    final statement = [
+      if (_statementBeforeRecording.isNotEmpty) _statementBeforeRecording,
+      if (transcript.isNotEmpty) transcript,
+    ].join('\n').trim();
+    _statementController.text = statement;
+    _statementController.selection = TextSelection.fromPosition(
+      TextPosition(offset: statement.length),
     );
   }
 

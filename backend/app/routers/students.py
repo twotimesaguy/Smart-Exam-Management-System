@@ -50,8 +50,8 @@ async def create_student(
         db.execute(
             """
             INSERT INTO students
-                (student_id, full_name, programme, level, face_image_path, face_embedding)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (student_id, full_name, programme, level, face_image_path, face_image_data, face_embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 student_id.strip(),
@@ -59,6 +59,7 @@ async def create_student(
                 programme.strip(),
                 level.strip(),
                 str(image_path),
+                image_bytes,
                 face_service.serialize(embedding),
             ),
         )

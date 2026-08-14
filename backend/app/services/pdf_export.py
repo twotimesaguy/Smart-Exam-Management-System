@@ -1,3 +1,5 @@
+from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 import re
 
@@ -85,7 +87,11 @@ def build_attendance_pdf(
     for record in records:
         data.append(
             [
-                _student_image(record.get("face_image_path")),
+                _student_image(
+                    record.get("attendance_face_image_data")
+                    or record.get("student_face_image_data")
+                    or record.get("face_image_path")
+                ),
                 record["student_id"],
                 record["full_name"],
                 record["venue"],
@@ -183,18 +189,27 @@ def _build_pdf(
     return path
 
 
-def _student_image(image_path: str | None) -> ReportLabImage | str:
-    if not image_path:
-        return ""
-
-    path = Path(image_path)
-    if not path.is_absolute():
-        path = BASE_DIR.parent / path
-    if not path.exists() or not path.is_file():
+def _student_image(
+    image_source: bytes | bytearray | memoryview | str | None,
+) -> ReportLabImage | str:
+    if not image_source:
         return ""
 
     try:
-        prepared_path, image_width, image_height = _prepare_student_image(path)
+        if isinstance(image_source, (bytes, bytearray, memoryview)):
+            image_bytes = bytes(image_source)
+            image_name = sha256(image_bytes).hexdigest()[:16]
+            prepared_path, image_width, image_height = _prepare_student_image_bytes(
+                image_bytes,
+                image_name,
+            )
+        else:
+            path = Path(image_source)
+            if not path.is_absolute():
+                path = BASE_DIR.parent / path
+            if not path.exists() or not path.is_file():
+                return ""
+            prepared_path, image_width, image_height = _prepare_student_image(path)
     except (OSError, ValueError):
         return ""
     display_width, display_height = _fit_size(
@@ -211,8 +226,23 @@ def _student_image(image_path: str | None) -> ReportLabImage | str:
 
 
 def _prepare_student_image(path: Path) -> tuple[Path, int, int]:
-    image = PillowImage.open(path)
-    image = ImageOps.exif_transpose(image)
+    with PillowImage.open(path) as image:
+        return _prepare_attendance_image(image, path.stem)
+
+
+def _prepare_student_image_bytes(
+    image_bytes: bytes,
+    image_name: str,
+) -> tuple[Path, int, int]:
+    with PillowImage.open(BytesIO(image_bytes)) as image:
+        return _prepare_attendance_image(image, image_name)
+
+
+def _prepare_attendance_image(
+    source_image: PillowImage.Image,
+    image_name: str,
+) -> tuple[Path, int, int]:
+    image = ImageOps.exif_transpose(source_image).copy()
 
     if image.width > image.height:
         image = image.rotate(-90, expand=True)
@@ -223,7 +253,7 @@ def _prepare_student_image(path: Path) -> tuple[Path, int, int]:
 
     export_dir = BASE_DIR / "exports" / "attendance_images"
     export_dir.mkdir(parents=True, exist_ok=True)
-    prepared_path = export_dir / f"{path.stem}_pdf.png"
+    prepared_path = export_dir / f"{image_name}_pdf.png"
     image.convert("RGB").save(prepared_path, optimize=True)
     return prepared_path, image.width, image.height
 

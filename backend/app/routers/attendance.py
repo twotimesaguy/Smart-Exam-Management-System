@@ -18,7 +18,7 @@ async def recognize_student(
     recorded_by: str = Form("System"),
     face_image: UploadFile = File(...),
 ) -> RecognizedStudentOut:
-    captured_embedding = await _embedding_from_upload(face_image)
+    face_image_data, captured_embedding = await _embedding_from_upload(face_image)
 
     with get_connection() as db:
         students = db.execute(
@@ -75,8 +75,8 @@ async def recognize_student(
             db.execute(
                 """
                 INSERT INTO attendance_records
-                    (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date, face_image_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     best_student["student_id"],
@@ -87,6 +87,7 @@ async def recognize_student(
                     recorded_by.strip() or "System",
                     best_score,
                     exam["exam_date"],
+                    face_image_data,
                 ),
             )
 
@@ -164,10 +165,10 @@ def _normalise_level(value: str) -> str:
     return "".join(character for character in cleaned if character.isalnum())
 
 
-async def _embedding_from_upload(face_image: UploadFile) -> list[float]:
+async def _embedding_from_upload(face_image: UploadFile) -> tuple[bytes, list[float]]:
     image_bytes = await face_image.read()
     try:
-        return face_service.embedding_from_bytes(image_bytes)
+        return image_bytes, face_service.embedding_from_bytes(image_bytes)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -185,7 +186,7 @@ async def _embedding_from_upload(face_image: UploadFile) -> list[float]:
 def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
     with get_connection() as db:
         student = db.execute(
-            "SELECT student_id, full_name FROM students WHERE student_id = ?",
+            "SELECT student_id, full_name, face_image_data FROM students WHERE student_id = ?",
             (payload.student_id,),
         ).fetchone()
         if student is None:
@@ -194,8 +195,8 @@ def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
         cursor = db.execute(
             """
             INSERT INTO attendance_records
-                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, face_image_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING
                 id, student_id, full_name, course_title, course_code, venue, recorded_by,
                 confidence, exam_date, recorded_at
@@ -208,6 +209,7 @@ def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
                 payload.venue,
                 payload.recorded_by,
                 payload.confidence,
+                student["face_image_data"],
             ),
         )
         row = cursor.fetchone()
@@ -225,7 +227,7 @@ async def recognize_and_record(
     recorded_by: str = Form(...),
     face_image: UploadFile = File(...),
 ) -> AttendanceOut:
-    captured_embedding = await _embedding_from_upload(face_image)
+    face_image_data, captured_embedding = await _embedding_from_upload(face_image)
 
     with get_connection() as db:
         students = db.execute(
@@ -249,8 +251,8 @@ async def recognize_and_record(
         cursor = db.execute(
             """
             INSERT INTO attendance_records
-                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date, face_image_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING
                 id, student_id, full_name, course_title, course_code, venue, recorded_by,
                 confidence, exam_date, recorded_at
@@ -264,6 +266,7 @@ async def recognize_and_record(
                 course_lecturer.strip() or recorded_by,
                 best_score,
                 exam_date,
+                face_image_data,
             ),
         )
         row = cursor.fetchone()
@@ -306,6 +309,8 @@ def export_attendance_pdf(
             attendance_records.confidence,
             attendance_records.exam_date,
             attendance_records.recorded_at,
+            attendance_records.face_image_data AS attendance_face_image_data,
+            students.face_image_data AS student_face_image_data,
             students.face_image_path
         FROM attendance_records
         LEFT JOIN students

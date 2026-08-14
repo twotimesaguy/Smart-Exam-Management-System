@@ -86,6 +86,7 @@ def init_db() -> None:
                 programme TEXT NOT NULL,
                 level TEXT NOT NULL,
                 face_image_path TEXT,
+                face_image_data BYTEA,
                 face_embedding TEXT,
                 registered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
             );
@@ -158,6 +159,7 @@ def init_db() -> None:
                 recorded_by TEXT NOT NULL,
                 confidence DOUBLE PRECISION,
                 exam_date TEXT NOT NULL DEFAULT CURRENT_DATE::text,
+                face_image_data BYTEA,
                 recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
             );
 
@@ -206,6 +208,10 @@ def _add_missing_columns(db: DatabaseConnection) -> None:
     )
     db.execute(
         "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS exam_date TEXT NOT NULL DEFAULT CURRENT_DATE::text"
+    )
+    db.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS face_image_data BYTEA")
+    db.execute(
+        "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS face_image_data BYTEA"
     )
     db.execute(
         "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS case_status TEXT NOT NULL DEFAULT 'pending'"

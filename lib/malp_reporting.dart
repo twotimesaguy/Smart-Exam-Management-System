@@ -439,11 +439,11 @@ class _MalpReportingState extends State<MalpReporting> {
                     controller: _incidentController,
                     maxLines: 4,
                     decoration: const InputDecoration(
-                      labelText: "Incident Description",
+                      labelText: "Invigilator's Description",
                       border: OutlineInputBorder(),
                     ),
                     validator: (value) => value == null || value.trim().isEmpty
-                        ? "Describe the malpractice incident"
+                        ? "Add the invigilator's description"
                         : null,
                   ),
                   SizedBox(height: sectionGap),

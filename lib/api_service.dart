@@ -273,6 +273,28 @@ class ApiService {
     return await _sendMultipart(request) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> recognizeAndRecordAttendance({
+    required String courseTitle,
+    required String courseCode,
+    required String venue,
+    required String recordedBy,
+    required String faceImagePath,
+  }) async {
+    final request =
+        http.MultipartRequest('POST', _uri('/attendance/recognize-and-record'))
+          ..fields.addAll({
+            'course_title': courseTitle,
+            'course_code': courseCode,
+            'venue': venue,
+            'recorded_by': recordedBy,
+          })
+          ..files.add(
+            await http.MultipartFile.fromPath('face_image', faceImagePath),
+          );
+
+    return await _sendMultipart(request) as Map<String, dynamic>;
+  }
+
   Future<void> submitMalpracticeReport({
     required String studentId,
     required String studentLevel,

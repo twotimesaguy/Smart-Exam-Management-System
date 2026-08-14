@@ -19,6 +19,10 @@ class AttendanceModule extends StatefulWidget {
 
 class _AttendanceModuleState extends State<AttendanceModule>
     with WidgetsBindingObserver {
+  final _attendanceFormKey = GlobalKey<FormState>();
+  final _courseTitleController = TextEditingController();
+  final _courseCodeController = TextEditingController();
+  final _venueController = TextEditingController();
   CameraController? _cameraController;
   List<CameraDescription> _cameras = const [];
   final FaceDetector _faceDetector = FaceDetector(
@@ -52,6 +56,9 @@ class _AttendanceModuleState extends State<AttendanceModule>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
 
+    _courseTitleController.dispose();
+    _courseCodeController.dispose();
+    _venueController.dispose();
     _cameraController?.dispose();
     _faceDetector.close();
     super.dispose();
@@ -184,6 +191,13 @@ class _AttendanceModuleState extends State<AttendanceModule>
       return;
     }
 
+    if (!_attendanceFormKey.currentState!.validate()) {
+      setState(() {
+        _result = 'Enter the exam details before capturing a student face.';
+      });
+      return;
+    }
+
     setState(() {
       _isScanning = true;
       _result = 'Capturing image and detecting face...';
@@ -213,7 +227,10 @@ class _AttendanceModuleState extends State<AttendanceModule>
         return;
       }
 
-      final student = await ApiService.instance.recognizeStudent(
+      final attendance = await ApiService.instance.recognizeAndRecordAttendance(
+        courseTitle: _courseTitleController.text.trim(),
+        courseCode: _courseCodeController.text.trim(),
+        venue: _venueController.text.trim(),
         faceImagePath: image.path,
         recordedBy: widget.currentUser.username,
       );
@@ -222,36 +239,17 @@ class _AttendanceModuleState extends State<AttendanceModule>
         return;
       }
 
-      final examScheduledToday =
-          student['exam_scheduled_today'] as bool? ?? true;
       setState(() {
-        if (examScheduledToday) {
-          _result =
-              'Attendance recorded\n\n'
-              'Name: ${student['full_name']}\n'
-              'Student ID: ${student['student_id']}\n'
-              'Programme: ${student['programme']}\n'
-              'Level: ${student['level']}\n'
-              'Paper: ${student['course_title']} (${student['course_code']})\n'
-              'Venue: ${student['venue']}\n'
-              'Exam time: ${student['start_time']} - ${student['end_time']}\n'
-              'Match confidence: ${((student['confidence'] as num) * 100).toStringAsFixed(1)}%';
-          _lastCourseCode = student['course_code'] as String;
-          _lastCourseTitle = student['course_title'] as String;
-          _lastExamDate = student['exam_date'] as String;
-        } else {
-          _result =
-              'Student recognised\n\n'
-              'Name: ${student['full_name']}\n'
-              'Student ID: ${student['student_id']}\n'
-              'Programme: ${student['programme']}\n'
-              'Level: ${student['level']}\n\n'
-              '${student['message']}\n'
-              'Match confidence: ${((student['confidence'] as num) * 100).toStringAsFixed(1)}%';
-          _lastCourseCode = null;
-          _lastCourseTitle = null;
-          _lastExamDate = null;
-        }
+        _result =
+            'Attendance recorded\n\n'
+            'Name: ${attendance['full_name']}\n'
+            'Student ID: ${attendance['student_id']}\n'
+            'Paper: ${attendance['course_title']} (${attendance['course_code']})\n'
+            'Venue: ${attendance['venue']}\n'
+            'Match confidence: ${((attendance['confidence'] as num) * 100).toStringAsFixed(1)}%';
+        _lastCourseCode = attendance['course_code'] as String;
+        _lastCourseTitle = attendance['course_title'] as String;
+        _lastExamDate = _todayIsoDate();
       });
     } catch (error) {
       if (!mounted) {
@@ -268,6 +266,13 @@ class _AttendanceModuleState extends State<AttendanceModule>
         });
       }
     }
+  }
+
+  String _todayIsoDate() {
+    final today = DateTime.now();
+    final month = today.month.toString().padLeft(2, '0');
+    final day = today.day.toString().padLeft(2, '0');
+    return '${today.year}-$month-$day';
   }
 
   Future<void> _openAttendancePdf() async {
@@ -384,7 +389,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
     return ModuleShell(
       title: 'Biometric Attendance',
       description:
-          'Scan a face to identify the student and automatically record today’s scheduled paper.',
+          'Enter the exam details, then scan a face to record the student’s attendance.',
       child: LayoutBuilder(
         builder: (context, constraints) {
           final panelHeight = constraints.maxHeight * 0.5;
@@ -392,6 +397,39 @@ class _AttendanceModuleState extends State<AttendanceModule>
 
           return ListView(
             children: [
+              Form(
+                key: _attendanceFormKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _courseTitleController,
+                      decoration: const InputDecoration(labelText: 'Course Title'),
+                      validator: (value) => value == null || value.trim().isEmpty
+                          ? 'Course title is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _courseCodeController,
+                      decoration: const InputDecoration(labelText: 'Course Code'),
+                      validator: (value) => value == null || value.trim().isEmpty
+                          ? 'Course code is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _venueController,
+                      decoration: const InputDecoration(labelText: 'Venue'),
+                      validator: (value) => value == null || value.trim().isEmpty
+                          ? 'Venue is required'
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: (constraints.maxHeight * 0.03).clamp(12.0, 22.0),
+              ),
               Container(
                 height: panelHeight.clamp(180.0, 360.0),
                 width: double.infinity,

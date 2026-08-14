@@ -48,10 +48,15 @@ async def recognize_student(
             recorded_by=recorded_by,
         )
         if exam is None:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No exam is scheduled today for level {best_student['level']}. "
+            return RecognizedStudentOut(
+                student_id=best_student["student_id"],
+                full_name=best_student["full_name"],
+                programme=best_student["programme"],
+                level=best_student["level"],
+                confidence=best_score,
+                exam_scheduled_today=False,
+                message=(
+                    f"{best_student['full_name']} has no exam scheduled today. "
                     "Attendance was not recorded."
                 ),
             )
@@ -92,6 +97,8 @@ async def recognize_student(
         programme=best_student["programme"],
         level=best_student["level"],
         confidence=best_score,
+        exam_scheduled_today=True,
+        message="Exam scheduled today. Attendance recorded.",
         course_title=exam["course_title"],
         course_code=exam["course_code"],
         venue=exam["venue"],
@@ -270,7 +277,7 @@ def list_attendance_records(course_code: str | None = None) -> list[AttendanceOu
 
 @router.get("/export/pdf")
 def export_attendance_pdf(
-    course_code: str, course_title: str | None = None
+    course_code: str, exam_date: str, course_title: str | None = None
 ) -> FileResponse:
     query = """
         SELECT
@@ -288,12 +295,20 @@ def export_attendance_pdf(
         LEFT JOIN students
             ON students.student_id = attendance_records.student_id
     """
-    query += " WHERE attendance_records.course_code = ?"
-    parameters = (course_code,)
+    query += """
+        WHERE attendance_records.course_code = ?
+          AND attendance_records.recorded_at::date = ?::date
+    """
+    parameters = (course_code, exam_date)
     query += " ORDER BY attendance_records.recorded_at ASC"
 
     with get_connection() as db:
         rows = db.execute(query, parameters).fetchall()
 
-    path = build_attendance_pdf([dict(row) for row in rows], course_code, course_title)
+    path = build_attendance_pdf(
+        [dict(row) for row in rows],
+        course_code=course_code,
+        course_title=course_title,
+        exam_date=exam_date,
+    )
     return FileResponse(path, media_type="application/pdf", filename=path.name)

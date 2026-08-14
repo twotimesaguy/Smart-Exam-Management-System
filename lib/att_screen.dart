@@ -39,6 +39,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
   String? _cameraError;
   String? _lastCourseCode;
   String? _lastCourseTitle;
+  String? _lastExamDate;
 
   @override
   void initState() {
@@ -221,19 +222,36 @@ class _AttendanceModuleState extends State<AttendanceModule>
         return;
       }
 
+      final examScheduledToday =
+          student['exam_scheduled_today'] as bool? ?? true;
       setState(() {
-        _result =
-            'Attendance recorded\n\n'
-            'Name: ${student['full_name']}\n'
-            'Student ID: ${student['student_id']}\n'
-            'Programme: ${student['programme']}\n'
-            'Level: ${student['level']}\n'
-            'Paper: ${student['course_title']} (${student['course_code']})\n'
-            'Venue: ${student['venue']}\n'
-            'Exam time: ${student['start_time']} - ${student['end_time']}\n'
-            'Match confidence: ${((student['confidence'] as num) * 100).toStringAsFixed(1)}%';
-        _lastCourseCode = student['course_code'] as String;
-        _lastCourseTitle = student['course_title'] as String;
+        if (examScheduledToday) {
+          _result =
+              'Attendance recorded\n\n'
+              'Name: ${student['full_name']}\n'
+              'Student ID: ${student['student_id']}\n'
+              'Programme: ${student['programme']}\n'
+              'Level: ${student['level']}\n'
+              'Paper: ${student['course_title']} (${student['course_code']})\n'
+              'Venue: ${student['venue']}\n'
+              'Exam time: ${student['start_time']} - ${student['end_time']}\n'
+              'Match confidence: ${((student['confidence'] as num) * 100).toStringAsFixed(1)}%';
+          _lastCourseCode = student['course_code'] as String;
+          _lastCourseTitle = student['course_title'] as String;
+          _lastExamDate = student['exam_date'] as String;
+        } else {
+          _result =
+              'Student recognised\n\n'
+              'Name: ${student['full_name']}\n'
+              'Student ID: ${student['student_id']}\n'
+              'Programme: ${student['programme']}\n'
+              'Level: ${student['level']}\n\n'
+              '${student['message']}\n'
+              'Match confidence: ${((student['confidence'] as num) * 100).toStringAsFixed(1)}%';
+          _lastCourseCode = null;
+          _lastCourseTitle = null;
+          _lastExamDate = null;
+        }
       });
     } catch (error) {
       if (!mounted) {
@@ -254,7 +272,8 @@ class _AttendanceModuleState extends State<AttendanceModule>
 
   Future<void> _openAttendancePdf() async {
     final courseCode = _lastCourseCode;
-    if (courseCode == null) {
+    final examDate = _lastExamDate;
+    if (courseCode == null || examDate == null) {
       return;
     }
 
@@ -266,10 +285,12 @@ class _AttendanceModuleState extends State<AttendanceModule>
     try {
       final bytes = await ApiService.instance.downloadAttendancePdf(
         courseCode: courseCode,
+        examDate: examDate,
         courseTitle: _lastCourseTitle,
       );
       await PdfExportService.instance.saveAndOpen(
-        fileName: 'attendance_${courseCode.replaceAll(' ', '_')}.pdf',
+        fileName:
+            'attendance_${courseCode.replaceAll(' ', '_')}_$examDate.pdf',
         bytes: bytes,
       );
       if (mounted) {

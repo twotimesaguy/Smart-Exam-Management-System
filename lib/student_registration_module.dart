@@ -18,7 +18,8 @@ class StudentRegistrationModule extends StatefulWidget {
 class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
   final _formKey = GlobalKey<FormState>();
   final _studentIdController = TextEditingController();
-  final _fullNameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _programmeController = TextEditingController();
   final _levelController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
@@ -39,7 +40,8 @@ class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
   @override
   void dispose() {
     _studentIdController.dispose();
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _programmeController.dispose();
     _levelController.dispose();
     super.dispose();
@@ -131,7 +133,8 @@ class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
     try {
       final student = await ApiService.instance.registerStudent(
         studentId: _studentIdController.text.trim(),
-        fullName: _fullNameController.text.trim(),
+        fullName:
+            '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}',
         programme: _programmeController.text.trim(),
         level: _levelController.text.trim(),
         faceImagePath: _faceImage!.path,
@@ -145,7 +148,8 @@ class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
 
       setState(() {
         _studentIdController.clear();
-        _fullNameController.clear();
+        _firstNameController.clear();
+        _lastNameController.clear();
         _programmeController.clear();
         _levelController.clear();
         _faceImage = null;
@@ -225,10 +229,18 @@ class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
                 ),
                 SizedBox(height: sectionGap),
                 TextFormField(
-                  controller: _fullNameController,
-                  decoration: _fieldDecoration(context, 'Full Name'),
+                  controller: _firstNameController,
+                  decoration: _fieldDecoration(context, 'First Name'),
                   validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Full name is required'
+                      ? 'First name is required'
+                      : null,
+                ),
+                SizedBox(height: sectionGap),
+                TextFormField(
+                  controller: _lastNameController,
+                  decoration: _fieldDecoration(context, 'Last Name'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Last name is required'
                       : null,
                 ),
                 SizedBox(height: sectionGap),

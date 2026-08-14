@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
@@ -9,6 +10,7 @@ from app.services.face_recognition import face_service
 from app.services.pdf_export import build_students_pdf
 
 router = APIRouter(prefix="/students", tags=["students"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=StudentOut, status_code=status.HTTP_201_CREATED)
@@ -32,6 +34,15 @@ async def create_student(
         embedding = face_service.embedding_from_bytes(image_bytes)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    except Exception:
+        logger.exception("Could not process the face image for student %s", student_id)
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "The face photo could not be processed. Capture a clear JPEG "
+                "or PNG photo and try again."
+            ),
+        )
 
     image_path = _save_student_image(student_id, image_bytes, face_image.filename)
 

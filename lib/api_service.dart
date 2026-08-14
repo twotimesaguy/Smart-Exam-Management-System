@@ -112,10 +112,12 @@ class ApiService {
 
   Future<Uint8List> downloadAttendancePdf({
     required String courseCode,
+    required String examDate,
     String? courseTitle,
   }) {
     return _getBytes('/attendance/export/pdf', {
       'course_code': courseCode,
+      'exam_date': examDate,
       'course_title': courseTitle,
     });
   }
@@ -467,12 +469,24 @@ class ApiService {
   }
 
   dynamic _decodeResponse(http.Response response) {
-    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    dynamic body;
+    if (response.body.isNotEmpty) {
+      try {
+        body = jsonDecode(response.body);
+      } on FormatException {
+        body = response.body.trim();
+      }
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (body is Map<String, dynamic> && body['detail'] != null) {
         throw ApiException(body['detail'].toString());
       }
-      throw ApiException('Request failed with status ${response.statusCode}.');
+      final responseMessage = body is String && body.isNotEmpty
+          ? ' $body'
+          : '';
+      throw ApiException(
+        'The server returned an error (${response.statusCode}).$responseMessage',
+      );
     }
     return body;
   }

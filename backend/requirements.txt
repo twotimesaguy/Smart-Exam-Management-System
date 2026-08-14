@@ -9,7 +9,9 @@ openpyxl==3.1.5
 reportlab==4.2.5
 pypdf==6.1.3
 numpy==2.2.1
-opencv-python==4.10.0.84
+# The headless build works in Railway/Linux containers; the desktop build can
+# fail when face processing first imports OpenCV because GUI libraries are absent.
+opencv-python-headless==4.10.0.84
 # Optional but recommended for production facial recognition:
 # insightface==0.7.3
 # onnxruntime==1.20.1

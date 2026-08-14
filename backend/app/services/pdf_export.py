@@ -40,38 +40,45 @@ def build_students_pdf(students: list[dict]) -> Path:
 
 def build_attendance_pdf(
     records: list[dict],
-    course_code: str | None = None,
+    *,
+    course_code: str,
+    exam_date: str,
     course_title: str | None = None,
 ) -> Path:
     export_dir = BASE_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    suffix = _safe_filename_part(course_code or "all")
+    suffix = "_".join(
+        (_safe_filename_part(course_code), _safe_filename_part(exam_date))
+    )
     path = export_dir / f"attendance_{suffix}.pdf"
 
     resolved_course_title = (course_title or "").strip()
     if not resolved_course_title and records:
         resolved_course_title = str(records[0].get("course_title") or "").strip()
 
-    title = "ATTENDANCE LIST"
-    subtitle = None
-    if course_code is not None:
-        subtitle = (
-            f"{resolved_course_title} ({course_code})"
-            if resolved_course_title
-            else course_code
-        )
+    lecturer_names = sorted(
+        {
+            str(record.get("recorded_by") or "").strip()
+            for record in records
+            if str(record.get("recorded_by") or "").strip()
+        }
+    )
+    lecturer_name = ", ".join(lecturer_names) or "Not available"
+    subtitle = (
+        f"Course Title: {resolved_course_title or 'Not available'}<br/>"
+        f"Course Code: {course_code}<br/>"
+        f"Exam Date: {exam_date}<br/>"
+        f"Lecturer / Invigilator: {lecturer_name}"
+    )
 
     data = [
         [
             "Photo",
             "Student ID",
             "Name",
-            "Course Title",
-            "Course Code",
             "Venue",
-            "Recorded By",
-            "Confidence",
-            "Recorded At",
+            "Scanned At",
+            "Match Confidence",
         ]
     ]
     for record in records:
@@ -80,12 +87,9 @@ def build_attendance_pdf(
                 _student_image(record.get("face_image_path")),
                 record["student_id"],
                 record["full_name"],
-                record.get("course_title") or resolved_course_title,
-                record["course_code"],
                 record["venue"],
-                record["recorded_by"],
-                "" if record["confidence"] is None else f"{record['confidence']:.2f}",
                 record["recorded_at"],
+                "" if record["confidence"] is None else f"{record['confidence']:.2f}",
             ]
         )
 
@@ -94,7 +98,7 @@ def build_attendance_pdf(
         title=title,
         subtitle=subtitle,
         data=data,
-        column_widths=[80, 64, 112, 118, 62, 78, 78, 60, 92],
+        column_widths=[80, 82, 155, 105, 128, 95],
         page_size=landscape(A4),
     )
 

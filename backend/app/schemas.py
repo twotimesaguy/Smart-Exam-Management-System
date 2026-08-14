@@ -103,12 +103,14 @@ class RecognizedStudentOut(BaseModel):
     programme: str
     level: str
     confidence: float
-    course_title: str
-    course_code: str
-    venue: str
-    exam_date: str
-    start_time: str
-    end_time: str
+    exam_scheduled_today: bool
+    message: str
+    course_title: str | None = None
+    course_code: str | None = None
+    venue: str | None = None
+    exam_date: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
 
 
 class AssignmentStatusUpdate(BaseModel):

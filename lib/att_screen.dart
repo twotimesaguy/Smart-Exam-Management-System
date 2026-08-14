@@ -22,7 +22,10 @@ class _AttendanceModuleState extends State<AttendanceModule>
   final _attendanceFormKey = GlobalKey<FormState>();
   final _courseTitleController = TextEditingController();
   final _courseCodeController = TextEditingController();
+  final _courseLecturerController = TextEditingController();
   final _venueController = TextEditingController();
+  final _examDateController = TextEditingController();
+  DateTime _selectedExamDate = DateTime.now();
   CameraController? _cameraController;
   List<CameraDescription> _cameras = const [];
   final FaceDetector _faceDetector = FaceDetector(
@@ -49,6 +52,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _examDateController.text = _formatExamDate(_selectedExamDate);
     _initializeCamera();
   }
 
@@ -58,7 +62,9 @@ class _AttendanceModuleState extends State<AttendanceModule>
 
     _courseTitleController.dispose();
     _courseCodeController.dispose();
+    _courseLecturerController.dispose();
     _venueController.dispose();
+    _examDateController.dispose();
     _cameraController?.dispose();
     _faceDetector.close();
     super.dispose();
@@ -230,7 +236,9 @@ class _AttendanceModuleState extends State<AttendanceModule>
       final attendance = await ApiService.instance.recognizeAndRecordAttendance(
         courseTitle: _courseTitleController.text.trim(),
         courseCode: _courseCodeController.text.trim(),
+        courseLecturer: _courseLecturerController.text.trim(),
         venue: _venueController.text.trim(),
+        examDate: _examDateController.text,
         faceImagePath: image.path,
         recordedBy: widget.currentUser.username,
       );
@@ -249,7 +257,7 @@ class _AttendanceModuleState extends State<AttendanceModule>
             'Match confidence: ${((attendance['confidence'] as num) * 100).toStringAsFixed(1)}%';
         _lastCourseCode = attendance['course_code'] as String;
         _lastCourseTitle = attendance['course_title'] as String;
-        _lastExamDate = _todayIsoDate();
+        _lastExamDate = attendance['exam_date'] as String;
       });
     } catch (error) {
       if (!mounted) {
@@ -268,11 +276,27 @@ class _AttendanceModuleState extends State<AttendanceModule>
     }
   }
 
-  String _todayIsoDate() {
-    final today = DateTime.now();
-    final month = today.month.toString().padLeft(2, '0');
-    final day = today.day.toString().padLeft(2, '0');
-    return '${today.year}-$month-$day';
+  String _formatExamDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  Future<void> _selectExamDate() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedExamDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (selectedDate == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedExamDate = selectedDate;
+      _examDateController.text = _formatExamDate(selectedDate);
+    });
   }
 
   Future<void> _openAttendancePdf() async {
@@ -399,32 +423,86 @@ class _AttendanceModuleState extends State<AttendanceModule>
             children: [
               Form(
                 key: _attendanceFormKey,
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _courseTitleController,
-                      decoration: const InputDecoration(labelText: 'Course Title'),
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Course title is required'
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _courseCodeController,
-                      decoration: const InputDecoration(labelText: 'Course Code'),
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Course code is required'
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _venueController,
-                      decoration: const InputDecoration(labelText: 'Venue'),
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Venue is required'
-                          : null,
-                    ),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, formConstraints) {
+                    final fieldWidth =
+                        ((formConstraints.maxWidth - 12).clamp(
+                                  0.0,
+                                  double.infinity,
+                                ) /
+                                2)
+                            .toDouble();
+
+                    Widget buildField({
+                      required TextEditingController controller,
+                      required String label,
+                      required IconData icon,
+                      required String errorMessage,
+                      bool readOnly = false,
+                      VoidCallback? onTap,
+                    }) {
+                      return SizedBox(
+                        width: fieldWidth,
+                        child: TextFormField(
+                          controller: controller,
+                          readOnly: readOnly,
+                          onTap: onTap,
+                          decoration: InputDecoration(
+                            labelText: label,
+                            prefixIcon: Icon(
+                              icon,
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.75,
+                              ),
+                            ),
+                          ),
+                          validator: (value) =>
+                              value == null || value.trim().isEmpty
+                              ? errorMessage
+                              : null,
+                        ),
+                      );
+                    }
+
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        buildField(
+                          controller: _courseTitleController,
+                          label: 'Course Title',
+                          icon: Icons.menu_book_outlined,
+                          errorMessage: 'Course title is required',
+                        ),
+                        buildField(
+                          controller: _courseCodeController,
+                          label: 'Course Code',
+                          icon: Icons.confirmation_number_outlined,
+                          errorMessage: 'Course code is required',
+                        ),
+                        buildField(
+                          controller: _courseLecturerController,
+                          label: 'Course Lecturer',
+                          icon: Icons.person_outline,
+                          errorMessage: 'Course lecturer is required',
+                        ),
+                        buildField(
+                          controller: _venueController,
+                          label: 'Venue',
+                          icon: Icons.location_on_outlined,
+                          errorMessage: 'Venue is required',
+                        ),
+                        buildField(
+                          controller: _examDateController,
+                          label: 'Exam Date',
+                          icon: Icons.calendar_today_outlined,
+                          errorMessage: 'Exam date is required',
+                          readOnly: true,
+                          onTap: _selectExamDate,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
               SizedBox(

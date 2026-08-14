@@ -94,6 +94,7 @@ class AttendanceOut(BaseModel):
     venue: str
     recorded_by: str
     confidence: float | None
+    exam_date: str
     recorded_at: str
 
 

@@ -68,7 +68,7 @@ def build_attendance_pdf(
         f"Course Title: {resolved_course_title or 'Not available'}<br/>"
         f"Course Code: {course_code}<br/>"
         f"Exam Date: {exam_date}<br/>"
-        f"Lecturer / Invigilator: {lecturer_name}"
+        f"Course Lecturer: {lecturer_name}"
     )
 
     data = [

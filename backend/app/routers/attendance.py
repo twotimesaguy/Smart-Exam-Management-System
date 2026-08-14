@@ -68,7 +68,7 @@ async def recognize_student(
             FROM attendance_records
             WHERE student_id = ?
               AND course_code = ?
-              AND recorded_at::date = ?::date
+              AND exam_date = ?
             LIMIT 1
             """,
             (best_student["student_id"], exam["course_code"], exam["exam_date"]),
@@ -77,8 +77,8 @@ async def recognize_student(
             db.execute(
                 """
                 INSERT INTO attendance_records
-                    (student_id, full_name, course_title, course_code, venue, recorded_by, confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     best_student["student_id"],
@@ -88,6 +88,7 @@ async def recognize_student(
                     exam["venue"],
                     recorded_by.strip() or "System",
                     best_score,
+                    exam["exam_date"],
                 ),
             )
 
@@ -182,7 +183,7 @@ def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
             VALUES (?, ?, ?, ?, ?, ?, ?)
             RETURNING
                 id, student_id, full_name, course_title, course_code, venue, recorded_by,
-                confidence, recorded_at
+                confidence, exam_date, recorded_at
             """,
             (
                 student["student_id"],
@@ -203,7 +204,9 @@ def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
 async def recognize_and_record(
     course_title: str = Form(...),
     course_code: str = Form(...),
+    course_lecturer: str = Form(...),
     venue: str = Form(...),
+    exam_date: str = Form(...),
     recorded_by: str = Form(...),
     face_image: UploadFile = File(...),
 ) -> AttendanceOut:
@@ -235,11 +238,11 @@ async def recognize_and_record(
         cursor = db.execute(
             """
             INSERT INTO attendance_records
-                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (student_id, full_name, course_title, course_code, venue, recorded_by, confidence, exam_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING
                 id, student_id, full_name, course_title, course_code, venue, recorded_by,
-                confidence, recorded_at
+                confidence, exam_date, recorded_at
             """,
             (
                 best_student["student_id"],
@@ -247,8 +250,9 @@ async def recognize_and_record(
                 course_title,
                 course_code,
                 venue,
-                recorded_by,
+                course_lecturer.strip() or recorded_by,
                 best_score,
+                exam_date,
             ),
         )
         row = cursor.fetchone()
@@ -261,7 +265,7 @@ def list_attendance_records(course_code: str | None = None) -> list[AttendanceOu
     query = """
         SELECT
             id, student_id, full_name, course_title, course_code, venue, recorded_by,
-            confidence, recorded_at
+            confidence, exam_date, recorded_at
         FROM attendance_records
     """
     parameters: tuple[str, ...] = ()
@@ -289,6 +293,7 @@ def export_attendance_pdf(
             attendance_records.venue,
             attendance_records.recorded_by,
             attendance_records.confidence,
+            attendance_records.exam_date,
             attendance_records.recorded_at,
             students.face_image_path
         FROM attendance_records
@@ -297,7 +302,7 @@ def export_attendance_pdf(
     """
     query += """
         WHERE attendance_records.course_code = ?
-          AND attendance_records.recorded_at::date = ?::date
+          AND attendance_records.exam_date = ?
     """
     parameters = (course_code, exam_date)
     query += " ORDER BY attendance_records.recorded_at ASC"

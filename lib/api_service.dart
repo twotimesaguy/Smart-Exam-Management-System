@@ -276,7 +276,9 @@ class ApiService {
   Future<Map<String, dynamic>> recognizeAndRecordAttendance({
     required String courseTitle,
     required String courseCode,
+    required String courseLecturer,
     required String venue,
+    required String examDate,
     required String recordedBy,
     required String faceImagePath,
   }) async {
@@ -285,7 +287,9 @@ class ApiService {
           ..fields.addAll({
             'course_title': courseTitle,
             'course_code': courseCode,
+            'course_lecturer': courseLecturer,
             'venue': venue,
+            'exam_date': examDate,
             'recorded_by': recordedBy,
           })
           ..files.add(

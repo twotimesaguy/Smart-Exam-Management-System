@@ -157,6 +157,7 @@ def init_db() -> None:
                 venue TEXT NOT NULL,
                 recorded_by TEXT NOT NULL,
                 confidence DOUBLE PRECISION,
+                exam_date TEXT NOT NULL DEFAULT CURRENT_DATE::text,
                 recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
             );
 
@@ -202,6 +203,9 @@ def _add_missing_columns(db: DatabaseConnection) -> None:
     db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_path TEXT")
     db.execute(
         "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS course_title TEXT NOT NULL DEFAULT ''"
+    )
+    db.execute(
+        "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS exam_date TEXT NOT NULL DEFAULT CURRENT_DATE::text"
     )
     db.execute(
         "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS case_status TEXT NOT NULL DEFAULT 'pending'"

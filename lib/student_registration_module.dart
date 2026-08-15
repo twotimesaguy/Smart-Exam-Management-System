@@ -219,6 +219,7 @@ class _StudentRegistrationModuleState extends State<StudentRegistrationModule> {
           return Form(
             key: _formKey,
             child: ListView(
+              padding: const EdgeInsets.only(top: 8, bottom: 24),
               children: [
                 TextFormField(
                   controller: _studentIdController,

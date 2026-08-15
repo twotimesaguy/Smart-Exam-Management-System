@@ -306,6 +306,8 @@ class ApiService {
     required String courseCode,
     required String venue,
     required String invigilatorName,
+    required String chiefInvigilatorName,
+    required bool chiefInvigilatorApproved,
     required String incidentDescription,
     required String studentStatement,
     String? studentFaceImagePath,
@@ -322,6 +324,8 @@ class ApiService {
         'course_code': courseCode,
         'venue': venue,
         'invigilator_name': invigilatorName,
+        'chief_invigilator_name': chiefInvigilatorName,
+        'chief_invigilator_approved': chiefInvigilatorApproved.toString(),
         'incident_description': incidentDescription,
         'student_statement': studentStatement,
       });
@@ -507,9 +511,7 @@ class ApiService {
       if (body is Map<String, dynamic> && body['detail'] != null) {
         throw ApiException(body['detail'].toString());
       }
-      final responseMessage = body is String && body.isNotEmpty
-          ? ' $body'
-          : '';
+      final responseMessage = body is String && body.isNotEmpty ? ' $body' : '';
       throw ApiException(
         'The server returned an error (${response.statusCode}).$responseMessage',
       );

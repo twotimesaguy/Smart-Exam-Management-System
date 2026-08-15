@@ -122,6 +122,8 @@ def build_malpractice_pdf(reports: list[dict]) -> Path:
             "Course",
             "Venue",
             "Invigilator",
+            "Chief Invigilator",
+            "Approval",
             "Status",
             "Resolution Notes",
             "Handled By",
@@ -136,6 +138,8 @@ def build_malpractice_pdf(reports: list[dict]) -> Path:
                 f"{report['course_title']} ({report['course_code']})",
                 report["venue"],
                 report["invigilator_name"],
+                report.get("chief_invigilator_name") or "",
+                "Approved" if report.get("chief_invigilator_approved") else "Not approved",
                 _status_label(report.get("case_status")),
                 report.get("resolution_notes") or "",
                 report.get("handled_by") or "",
@@ -147,7 +151,7 @@ def build_malpractice_pdf(reports: list[dict]) -> Path:
         path=path,
         title="Malpractice Case Report",
         data=data,
-        column_widths=[42, 70, 150, 72, 88, 70, 160, 82, 92],
+        column_widths=[36, 58, 112, 56, 72, 88, 58, 54, 118, 64, 76],
         page_size=landscape(A4),
     )
 

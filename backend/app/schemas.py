@@ -125,6 +125,8 @@ class MalpracticeCreate(BaseModel):
     course_code: str
     venue: str
     invigilator_name: str
+    chief_invigilator_name: str
+    chief_invigilator_approved: bool
     incident_description: str
     student_statement: str
 

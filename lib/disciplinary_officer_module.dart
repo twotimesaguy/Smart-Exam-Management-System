@@ -57,9 +57,9 @@ class _DisciplinaryOfficerModuleState extends State<DisciplinaryOfficerModule> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openCase(MalpracticeCase report) async {
@@ -137,7 +137,9 @@ class _DisciplinaryOfficerModuleState extends State<DisciplinaryOfficerModule> {
                 children: [
                   Expanded(child: filter),
                   const SizedBox(width: 12),
-                  ...actions.expand((action) => [action, const SizedBox(width: 8)]),
+                  ...actions.expand(
+                    (action) => [action, const SizedBox(width: 8)],
+                  ),
                 ]..removeLast(),
               );
             },
@@ -153,9 +155,10 @@ class _DisciplinaryOfficerModuleState extends State<DisciplinaryOfficerModule> {
                 if (snapshot.hasError) {
                   return _EmptyState(
                     icon: Icons.cloud_off_outlined,
-                    message: snapshot.error
-                        .toString()
-                        .replaceFirst('Exception: ', ''),
+                    message: snapshot.error.toString().replaceFirst(
+                      'Exception: ',
+                      '',
+                    ),
                   );
                 }
 
@@ -255,10 +258,7 @@ class _CaseTile extends StatelessWidget {
 }
 
 class _CaseHandlingSheet extends StatefulWidget {
-  const _CaseHandlingSheet({
-    required this.report,
-    required this.officerName,
-  });
+  const _CaseHandlingSheet({required this.report, required this.officerName});
 
   final MalpracticeCase report;
   final String officerName;
@@ -312,9 +312,9 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -349,6 +349,16 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
               _DetailRow(label: 'Course', value: report.courseTitle),
               _DetailRow(label: 'Venue', value: report.venue),
               _DetailRow(label: 'Invigilator', value: report.invigilatorName),
+              _DetailRow(
+                label: 'Chief Invigilator',
+                value: report.chiefInvigilatorName,
+              ),
+              _DetailRow(
+                label: 'Chief Approval',
+                value: report.chiefInvigilatorApproved
+                    ? 'Approved'
+                    : 'Not approved',
+              ),
               _DetailRow(label: 'Reported', value: report.createdAt),
               if (report.studentFaceImageUrl != null ||
                   report.foreignMaterialImageUrl != null) ...[
@@ -368,7 +378,9 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
               Text(report.studentStatement),
               if (report.studentStatementAudioUrl != null) ...[
                 const SizedBox(height: 12),
-                _VoiceRecordingPlayer(audioUrl: report.studentStatementAudioUrl!),
+                _VoiceRecordingPlayer(
+                  audioUrl: report.studentStatementAudioUrl!,
+                ),
               ],
               const SizedBox(height: 18),
               DropdownButtonFormField<MalpracticeCaseStatus>(
@@ -485,8 +497,14 @@ class _VoiceRecordingPlayerState extends State<_VoiceRecordingPlayer> {
               dimension: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : Icon(_isPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline),
-      label: Text(_isPlaying ? 'Pause student recording' : 'Play student recording'),
+          : Icon(
+              _isPlaying
+                  ? Icons.pause_circle_outline
+                  : Icons.play_circle_outline,
+            ),
+      label: Text(
+        _isPlaying ? 'Pause student recording' : 'Play student recording',
+      ),
     );
   }
 }
@@ -534,10 +552,7 @@ class _EvidenceImages extends StatelessWidget {
 }
 
 class _EvidenceImageTile extends StatelessWidget {
-  const _EvidenceImageTile({
-    required this.label,
-    required this.imageUrl,
-  });
+  const _EvidenceImageTile({required this.label, required this.imageUrl});
 
   final String label;
   final String imageUrl;
@@ -605,11 +620,7 @@ class _MetaText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16),
-        const SizedBox(width: 4),
-        Text(text),
-      ],
+      children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(text)],
     );
   }
 }

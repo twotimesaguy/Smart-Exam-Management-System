@@ -27,6 +27,8 @@ class _MalpReportingState extends State<MalpReporting> {
   final TextEditingController _courseCodeController = TextEditingController();
   final TextEditingController _venueController = TextEditingController();
   final TextEditingController _invigilatorController = TextEditingController();
+  final TextEditingController _chiefInvigilatorController =
+      TextEditingController();
   final TextEditingController _incidentController = TextEditingController();
   final TextEditingController _statementController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
@@ -40,6 +42,7 @@ class _MalpReportingState extends State<MalpReporting> {
   bool _isRecordingVoiceNote = false;
   bool _speechAvailable = false;
   bool _isSubmitting = false;
+  bool _chiefInvigilatorApproved = false;
   String? _voiceRecordingPath;
   Uint8List? _voiceRecordingBytes;
   String? _voiceRecordingFileName;
@@ -67,6 +70,7 @@ class _MalpReportingState extends State<MalpReporting> {
     _courseCodeController.dispose();
     _venueController.dispose();
     _invigilatorController.dispose();
+    _chiefInvigilatorController.dispose();
     _incidentController.dispose();
     _statementController.dispose();
     _transcriptionFinished?.complete();
@@ -161,7 +165,8 @@ class _MalpReportingState extends State<MalpReporting> {
           setState(() {
             _isRecordingVoiceNote = false;
             _isStoppingVoiceNote = false;
-            _speechStatus = 'The recording was made but could not be prepared for upload.';
+            _speechStatus =
+                'The recording was made but could not be prepared for upload.';
           });
         }
       }
@@ -179,7 +184,8 @@ class _MalpReportingState extends State<MalpReporting> {
               _finishCurrentSpeechSegment();
               if (_isRecordingVoiceNote && !_isStoppingVoiceNote) {
                 setState(() {
-                  _speechStatus = "Still recording. Continuing live transcription...";
+                  _speechStatus =
+                      "Still recording. Continuing live transcription...";
                 });
                 unawaited(_restartLiveTranscription());
               } else {
@@ -226,7 +232,8 @@ class _MalpReportingState extends State<MalpReporting> {
     if (!await _audioRecorder.hasPermission()) {
       if (mounted) {
         setState(() {
-          _speechStatus = 'Microphone permission is required to save the voice recording.';
+          _speechStatus =
+              'Microphone permission is required to save the voice recording.';
         });
       }
       return;
@@ -234,15 +241,14 @@ class _MalpReportingState extends State<MalpReporting> {
     try {
       final recordingPath = await _recordingPath();
       await _audioRecorder.start(
-        RecordConfig(
-          encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc,
-        ),
+        RecordConfig(encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc),
         path: recordingPath,
       );
     } catch (_) {
       if (mounted) {
         setState(() {
-          _speechStatus = 'Unable to start the voice recorder. Check microphone permission.';
+          _speechStatus =
+              'Unable to start the voice recorder. Check microphone permission.';
         });
       }
       return;
@@ -389,6 +395,14 @@ class _MalpReportingState extends State<MalpReporting> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    if (!_chiefInvigilatorApproved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chief invigilator approval is required.'),
+        ),
+      );
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -400,6 +414,8 @@ class _MalpReportingState extends State<MalpReporting> {
         courseCode: _courseCodeController.text.trim(),
         venue: _venueController.text.trim(),
         invigilatorName: _invigilatorController.text.trim(),
+        chiefInvigilatorName: _chiefInvigilatorController.text.trim(),
+        chiefInvigilatorApproved: _chiefInvigilatorApproved,
         incidentDescription: _incidentController.text.trim(),
         studentStatement: _statementController.text.trim(),
         studentFaceImagePath: _studentFaceImage?.path,
@@ -423,6 +439,8 @@ class _MalpReportingState extends State<MalpReporting> {
         _voiceRecordingBytes = null;
         _voiceRecordingFileName = null;
         _invigilatorController.text = widget.currentUser?.username ?? '';
+        _chiefInvigilatorController.clear();
+        _chiefInvigilatorApproved = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -531,6 +549,27 @@ class _MalpReportingState extends State<MalpReporting> {
                   ),
                   SizedBox(height: sectionGap),
                   TextFormField(
+                    controller: _chiefInvigilatorController,
+                    decoration: const InputDecoration(
+                      labelText: 'Chief Invigilator Name',
+                    ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Chief invigilator name is required'
+                        : null,
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _chiefInvigilatorApproved,
+                    onChanged: (value) {
+                      setState(
+                        () => _chiefInvigilatorApproved = value ?? false,
+                      );
+                    },
+                    title: const Text('Chief invigilator approval'),
+                  ),
+                  SizedBox(height: sectionGap),
+                  TextFormField(
                     controller: _incidentController,
                     maxLines: 4,
                     decoration: const InputDecoration(
@@ -592,7 +631,8 @@ class _MalpReportingState extends State<MalpReporting> {
                       ),
                     ],
                   ),
-                  if (_voiceRecordingPath != null || _voiceRecordingBytes != null) ...[
+                  if (_voiceRecordingPath != null ||
+                      _voiceRecordingBytes != null) ...[
                     SizedBox(height: sectionGap),
                     Text(
                       'Voice recording attached. The disciplinary officer can play it from the case.',

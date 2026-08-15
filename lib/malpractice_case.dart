@@ -51,6 +51,8 @@ class MalpracticeCase {
     required this.courseCode,
     required this.venue,
     required this.invigilatorName,
+    required this.chiefInvigilatorName,
+    required this.chiefInvigilatorApproved,
     required this.incidentDescription,
     required this.studentStatement,
     required this.forwardedStatus,
@@ -72,6 +74,8 @@ class MalpracticeCase {
   final String courseCode;
   final String venue;
   final String invigilatorName;
+  final String chiefInvigilatorName;
+  final bool chiefInvigilatorApproved;
   final String incidentDescription;
   final String studentStatement;
   final String forwardedStatus;
@@ -99,6 +103,9 @@ class MalpracticeCase {
       courseCode: json['course_code'] as String,
       venue: json['venue'] as String,
       invigilatorName: json['invigilator_name'] as String,
+      chiefInvigilatorName: json['chief_invigilator_name'] as String? ?? '',
+      chiefInvigilatorApproved:
+          json['chief_invigilator_approved'] as bool? ?? false,
       incidentDescription: json['incident_description'] as String,
       studentStatement: json['student_statement'] as String,
       forwardedStatus: json['forwarded_status'] as String? ?? 'pending',

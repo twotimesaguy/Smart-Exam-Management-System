@@ -21,6 +21,8 @@ async def create_malpractice_report(
     course_code: str = Form(...),
     venue: str = Form(...),
     invigilator_name: str = Form(...),
+    chief_invigilator_name: str = Form(...),
+    chief_invigilator_approved: bool = Form(...),
     incident_description: str = Form(...),
     student_statement: str = Form(...),
     student_face_image: UploadFile | None = File(None),
@@ -38,10 +40,10 @@ async def create_malpractice_report(
             """
             INSERT INTO malpractice_reports
                 (student_id, student_level, course_title, course_code, venue, invigilator_name,
-                 incident_description, student_statement, student_face_image_path,
+                 chief_invigilator_name, chief_invigilator_approved, incident_description, student_statement, student_face_image_path,
                  foreign_material_image_path, student_statement_audio,
                  student_statement_audio_content_type, student_statement_audio_filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             """,
             (
@@ -51,6 +53,8 @@ async def create_malpractice_report(
                 course_code,
                 venue,
                 invigilator_name,
+                chief_invigilator_name,
+                chief_invigilator_approved,
                 incident_description,
                 student_statement,
                 str(student_face_path) if student_face_path else None,

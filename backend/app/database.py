@@ -171,6 +171,8 @@ def init_db() -> None:
                 course_code TEXT NOT NULL,
                 venue TEXT NOT NULL,
                 invigilator_name TEXT NOT NULL,
+                chief_invigilator_name TEXT NOT NULL DEFAULT '',
+                chief_invigilator_approved BOOLEAN NOT NULL DEFAULT FALSE,
                 incident_description TEXT NOT NULL,
                 student_statement TEXT NOT NULL,
                 student_face_image_path TEXT,
@@ -221,6 +223,12 @@ def _add_missing_columns(db: DatabaseConnection) -> None:
     )
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS handled_by TEXT")
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS handled_at TEXT")
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS chief_invigilator_name TEXT NOT NULL DEFAULT ''"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS chief_invigilator_approved BOOLEAN NOT NULL DEFAULT FALSE"
+    )
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio BYTEA")
     db.execute(
         "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio_content_type TEXT"

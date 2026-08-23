@@ -7,7 +7,6 @@ import 'package:flutter_application_1/module_shell.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 
 class MalpReporting extends StatefulWidget {
@@ -32,7 +31,6 @@ class _MalpReportingState extends State<MalpReporting> {
   final TextEditingController _incidentController = TextEditingController();
   final TextEditingController _statementController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
-  final SpeechToText _speechToText = SpeechToText();
   final AudioRecorder _audioRecorder = AudioRecorder();
 
   XFile? _studentFaceImage;
@@ -40,20 +38,12 @@ class _MalpReportingState extends State<MalpReporting> {
   XFile? _foreignMaterialImage;
   Uint8List? _foreignMaterialPreviewBytes;
   bool _isRecordingVoiceNote = false;
-  bool _speechAvailable = false;
+  bool _isTranscribingVoiceNote = false;
   bool _isSubmitting = false;
   bool _chiefInvigilatorApproved = false;
   String? _voiceRecordingPath;
   Uint8List? _voiceRecordingBytes;
   String? _voiceRecordingFileName;
-  Completer<void>? _transcriptionFinished;
-  bool _hasTranscription = false;
-  bool _isStoppingVoiceNote = false;
-  bool _isRestartingSpeech = false;
-  final List<String> _transcriptSegments = [];
-  String _activeTranscript = '';
-  String _statementBeforeRecording = '';
-  String? _speechError;
   String _speechStatus = "Record the student's statement";
 
   @override
@@ -73,8 +63,6 @@ class _MalpReportingState extends State<MalpReporting> {
     _chiefInvigilatorController.dispose();
     _incidentController.dispose();
     _statementController.dispose();
-    _transcriptionFinished?.complete();
-    _speechToText.stop();
     unawaited(_audioRecorder.dispose());
     super.dispose();
   }
@@ -117,14 +105,16 @@ class _MalpReportingState extends State<MalpReporting> {
   }
 
   Future<void> _toggleVoiceNote() async {
+    if (_isTranscribingVoiceNote) {
+      return;
+    }
+
     if (_isRecordingVoiceNote) {
       setState(() {
-        _isStoppingVoiceNote = true;
-        _speechStatus = 'Finishing transcription and saving the voice note...';
+        _isRecordingVoiceNote = false;
+        _isTranscribingVoiceNote = true;
+        _speechStatus = 'Saving and transcribing the voice note...';
       });
-      await _speechToText.stop();
-      await _waitForTranscription();
-      _finishCurrentSpeechSegment();
       final recordingPath = await _audioRecorder.stop();
       if (!mounted) {
         return;
@@ -132,103 +122,59 @@ class _MalpReportingState extends State<MalpReporting> {
 
       if (recordingPath == null) {
         setState(() {
-          _isRecordingVoiceNote = false;
-          _isStoppingVoiceNote = false;
+          _isTranscribingVoiceNote = false;
           _speechStatus = 'Voice recording could not be saved.';
         });
         return;
       }
 
+      Uint8List? recordingBytes;
+      const recordingFileName = 'student_statement.wav';
       try {
-        final recordingBytes = kIsWeb
+        recordingBytes = kIsWeb
             ? await _readWebRecording(recordingPath)
             : null;
         if (!mounted) {
           return;
         }
+        final transcript = await ApiService.instance.transcribeVoiceNote(
+          path: kIsWeb ? null : recordingPath,
+          bytes: recordingBytes,
+          filename: recordingFileName,
+        );
+        if (!mounted) {
+          return;
+        }
         setState(() {
-          _isRecordingVoiceNote = false;
-          _isStoppingVoiceNote = false;
+          final existingStatement = _statementController.text.trim();
+          _statementController.text = [
+            if (existingStatement.isNotEmpty) existingStatement,
+            transcript,
+          ].join('\n');
+          _statementController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _statementController.text.length),
+          );
           _voiceRecordingPath = kIsWeb ? null : recordingPath;
           _voiceRecordingBytes = recordingBytes;
-          _voiceRecordingFileName = kIsWeb
-              ? 'student_statement.webm'
-              : 'student_statement.m4a';
-          _speechStatus = _hasTranscription
-              ? 'Voice note saved and transcribed.'
-              : _speechError == null
-              ? 'Voice note saved, but no speech was recognised. Try again or type the statement.'
-              : 'Voice note saved, but transcription failed: $_speechError';
+          _voiceRecordingFileName = recordingFileName;
+          _isTranscribingVoiceNote = false;
+          _speechStatus = 'Voice note saved and transcribed.';
         });
-      } catch (_) {
+      } catch (error) {
         if (mounted) {
           setState(() {
-            _isRecordingVoiceNote = false;
-            _isStoppingVoiceNote = false;
-            _speechStatus =
-                'The recording was made but could not be prepared for upload.';
+            _voiceRecordingPath = kIsWeb ? null : recordingPath;
+            _voiceRecordingBytes = recordingBytes;
+            _voiceRecordingFileName = recordingFileName;
+            _isTranscribingVoiceNote = false;
+            _speechStatus = 'Voice note saved, but transcription failed: '
+                '${error.toString().replaceFirst('Exception: ', '')}';
           });
         }
       }
       return;
     }
 
-    final available =
-        _speechAvailable ||
-        await _speechToText.initialize(
-          onStatus: (status) {
-            if (!mounted) {
-              return;
-            }
-            if (status == "done" || status == "notListening") {
-              _finishCurrentSpeechSegment();
-              if (_isRecordingVoiceNote && !_isStoppingVoiceNote) {
-                setState(() {
-                  _speechStatus =
-                      "Still recording. Continuing live transcription...";
-                });
-                unawaited(_restartLiveTranscription());
-              } else {
-                _completeTranscription();
-              }
-            }
-          },
-          onError: (error) {
-            if (!mounted) {
-              return;
-            }
-            setState(() {
-              _speechError = error.errorMsg;
-              _speechStatus = "Voice note unavailable: ${error.errorMsg}";
-            });
-            if (_isRecordingVoiceNote && !_isStoppingVoiceNote) {
-              unawaited(_restartLiveTranscription());
-            } else {
-              _completeTranscription();
-            }
-          },
-        );
-
-    if (!mounted) {
-      return;
-    }
-
-    if (!available) {
-      setState(() {
-        _speechAvailable = false;
-        _speechStatus = "Speech recognition is not available on this device";
-      });
-      return;
-    }
-
-    _speechAvailable = true;
-    _hasTranscription = false;
-    _isStoppingVoiceNote = false;
-    _isRestartingSpeech = false;
-    _transcriptSegments.clear();
-    _activeTranscript = '';
-    _statementBeforeRecording = _statementController.text.trim();
-    _speechError = null;
     if (!await _audioRecorder.hasPermission()) {
       if (mounted) {
         setState(() {
@@ -241,7 +187,12 @@ class _MalpReportingState extends State<MalpReporting> {
     try {
       final recordingPath = await _recordingPath();
       await _audioRecorder.start(
-        RecordConfig(encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc),
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+          noiseSuppress: true,
+        ),
         path: recordingPath,
       );
     } catch (_) {
@@ -256,123 +207,8 @@ class _MalpReportingState extends State<MalpReporting> {
 
     setState(() {
       _isRecordingVoiceNote = true;
-      _speechStatus = "Recording and transcribing the student's statement...";
+      _speechStatus = "Recording the student's statement...";
     });
-    await _startLiveTranscription();
-  }
-
-  Future<void> _startLiveTranscription() async {
-    if (!_isRecordingVoiceNote || _isStoppingVoiceNote || !mounted) {
-      return;
-    }
-
-    _transcriptionFinished = Completer<void>();
-    try {
-      await _speechToText.listen(
-        // Keep the recognizer open until the user taps Stop. Some devices end
-        // a system speech session early; the status listener starts it again.
-        listenFor: const Duration(hours: 24),
-        pauseFor: const Duration(hours: 24),
-        listenOptions: SpeechListenOptions(
-          listenMode: ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-        ),
-        onResult: (result) {
-          if (!mounted) {
-            return;
-          }
-          final transcript = result.recognizedWords.trim();
-          if (transcript.isEmpty) {
-            if (result.finalResult) {
-              _finishCurrentSpeechSegment();
-              _completeTranscription();
-            }
-            return;
-          }
-
-          setState(() {
-            _hasTranscription = true;
-            _activeTranscript = transcript;
-            _updateStudentStatementFromTranscript();
-          });
-          if (result.finalResult) {
-            _finishCurrentSpeechSegment();
-            _completeTranscription();
-          }
-        },
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _speechError = error.toString();
-        _speechStatus = 'Live transcription could not start: $_speechError';
-      });
-      _completeTranscription();
-    }
-  }
-
-  Future<void> _restartLiveTranscription() async {
-    if (_isRestartingSpeech || !_isRecordingVoiceNote || _isStoppingVoiceNote) {
-      return;
-    }
-
-    _isRestartingSpeech = true;
-    try {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-      await _startLiveTranscription();
-    } finally {
-      _isRestartingSpeech = false;
-    }
-  }
-
-  void _finishCurrentSpeechSegment() {
-    final transcript = _activeTranscript.trim();
-    if (transcript.isEmpty) {
-      return;
-    }
-    if (_transcriptSegments.isEmpty || _transcriptSegments.last != transcript) {
-      _transcriptSegments.add(transcript);
-    }
-    _activeTranscript = '';
-    if (mounted) {
-      setState(_updateStudentStatementFromTranscript);
-    }
-  }
-
-  void _updateStudentStatementFromTranscript() {
-    final transcript = [
-      ..._transcriptSegments,
-      if (_activeTranscript.trim().isNotEmpty) _activeTranscript.trim(),
-    ].join(' ').trim();
-    final statement = [
-      if (_statementBeforeRecording.isNotEmpty) _statementBeforeRecording,
-      if (transcript.isNotEmpty) transcript,
-    ].join('\n').trim();
-    _statementController.text = statement;
-    _statementController.selection = TextSelection.fromPosition(
-      TextPosition(offset: statement.length),
-    );
-  }
-
-  void _completeTranscription() {
-    final completer = _transcriptionFinished;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
-    }
-  }
-
-  Future<void> _waitForTranscription() async {
-    final completer = _transcriptionFinished;
-    if (completer == null) {
-      return;
-    }
-    await completer.future.timeout(
-      const Duration(milliseconds: 750),
-      onTimeout: () {},
-    );
   }
 
   Future<String> _recordingPath() async {
@@ -380,7 +216,7 @@ class _MalpReportingState extends State<MalpReporting> {
       return '';
     }
     final directory = await getTemporaryDirectory();
-    return '${directory.path}/student_statement_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    return '${directory.path}/student_statement_${DateTime.now().millisecondsSinceEpoch}.wav';
   }
 
   Future<Uint8List> _readWebRecording(String path) async {
@@ -617,14 +453,20 @@ class _MalpReportingState extends State<MalpReporting> {
                         ),
                       ),
                       FilledButton.icon(
-                        onPressed: _toggleVoiceNote,
+                        onPressed: _isTranscribingVoiceNote
+                            ? null
+                            : _toggleVoiceNote,
                         icon: Icon(
-                          _isRecordingVoiceNote
+                          _isTranscribingVoiceNote
+                              ? Icons.hourglass_top_outlined
+                              : _isRecordingVoiceNote
                               ? Icons.stop_circle_outlined
                               : Icons.mic_none,
                         ),
                         label: Text(
-                          _isRecordingVoiceNote
+                          _isTranscribingVoiceNote
+                              ? 'Transcribing Voice Note...'
+                              : _isRecordingVoiceNote
                               ? "Stop Voice Note"
                               : "Record Voice Note",
                         ),

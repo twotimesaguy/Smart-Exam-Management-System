@@ -367,6 +367,45 @@ class ApiService {
     await _sendMultipart(request);
   }
 
+  Future<String> transcribeVoiceNote({
+    String? path,
+    List<int>? bytes,
+    String? filename,
+  }) async {
+    if (bytes == null && path == null) {
+      throw const ApiException('No voice recording is available to transcribe.');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/malpractice/transcriptions'),
+    );
+    if (bytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'audio',
+          bytes,
+          filename: filename ?? 'student_statement.wav',
+        ),
+      );
+    } else {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'audio',
+          path!,
+          filename: filename ?? 'student_statement.wav',
+        ),
+      );
+    }
+
+    final data = await _sendMultipart(request) as Map<String, dynamic>;
+    final transcript = (data['transcript'] as String? ?? '').trim();
+    if (transcript.isEmpty) {
+      throw const ApiException('No speech was recognised in this voice note.');
+    }
+    return transcript;
+  }
+
   Future<List<MalpracticeCase>> fetchMalpracticeCases() async {
     final data = await _getJson('/malpractice/reports') as List<dynamic>;
     return data

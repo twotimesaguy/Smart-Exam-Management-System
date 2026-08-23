@@ -9,8 +9,32 @@ from app.database import get_connection
 from app.schemas import MalpracticeStatusUpdate
 from app.services.malpractice_forwarder import forward_report
 from app.services.pdf_export import build_malpractice_pdf
+from app.services.transcription import (
+    TranscriptionConfigurationError,
+    TranscriptionError,
+    transcribe_audio,
+)
 
 router = APIRouter(prefix="/malpractice", tags=["malpractice"])
+
+
+@router.post("/transcriptions")
+async def transcribe_student_statement(
+    audio: UploadFile = File(...),
+) -> dict[str, str]:
+    """Transcribe a short voice note before it is attached to a case report."""
+    audio_bytes = await audio.read()
+    try:
+        transcript = await transcribe_audio(
+            audio_bytes=audio_bytes,
+            content_type=audio.content_type,
+            filename=audio.filename,
+        )
+    except TranscriptionConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except TranscriptionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"transcript": transcript}
 
 
 @router.post("/reports", status_code=201)
@@ -251,7 +275,7 @@ async def _read_optional_audio(
             detail="The voice recording is too large. Keep it under 15 MB.",
         )
 
-    filename = Path(upload.filename or "student_statement.m4a").name
+    filename = Path(upload.filename or "student_statement.wav").name
     guessed_content_type = mimetypes.guess_type(filename)[0]
     content_type = (
         upload.content_type

@@ -47,12 +47,21 @@ flutter build apk --release --dart-define=API_BASE_URL=https://your-api-url
 - `POST /attendance/record`
 - `GET /attendance/export/pdf`
 - `POST /malpractice/reports`
+- `POST /malpractice/transcriptions`
 - `GET /malpractice/reports`
 - `GET /assignments/{invigilator_username}`
 
 The facial recognition service currently has a deterministic fallback so the
 API can run immediately. Install `insightface` and `onnxruntime` when you are
 ready to use real face embeddings.
+
+## Voice-note transcription
+
+The app records the voice note first, then sends it to the backend for
+transcription. Set `GEMINI_API_KEY` in the Railway API service (not the Flutter
+app) and redeploy. Recordings are saved as speech-friendly WAV files; short
+notes up to 10 MB are supported. The original audio is still attached to the
+malpractice report even when transcription fails.
 
 ## PostgreSQL setup
 

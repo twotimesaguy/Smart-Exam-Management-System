@@ -13,6 +13,16 @@ class AllocationModule extends StatefulWidget {
 
 class _AllocationModuleState extends State<AllocationModule> {
   static const _semesterOptions = ['First Semester', 'Second Semester'];
+  static const _wizardStepNames = [
+    'Lecturers',
+    'Venues',
+    'Courses',
+    'Programmes',
+    'Course Lecturers',
+    'Time Slots',
+    'Semester',
+    'Dates',
+  ];
   static const _maxSessionDurationMinutes = 120;
 
   final _titleController = TextEditingController(
@@ -353,9 +363,7 @@ class _AllocationModuleState extends State<AllocationModule> {
       ..._venueFiles.map((file) => upload(file, 'venue')),
       ..._courseFiles.map((file) => upload(file, 'course')),
       ..._programmeFiles.map((file) => upload(file, 'programme')),
-      ..._courseLecturerFiles.map(
-        (file) => upload(file, 'course_lecturer'),
-      ),
+      ..._courseLecturerFiles.map((file) => upload(file, 'course_lecturer')),
     ];
   }
 
@@ -411,28 +419,78 @@ class _AllocationModuleState extends State<AllocationModule> {
   }
 
   Widget _buildWizard(ColorScheme colorScheme) {
+    final steps = _buildWizardSteps();
+    final currentStep = steps[_currentStep];
+    final isLastStep = _currentStep == steps.length - 1;
+
     return Container(
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: colorScheme.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: colorScheme.primary.withValues(alpha: 0.10)),
       ),
-      child: Stepper(
-        physics: const NeverScrollableScrollPhysics(),
-        currentStep: _currentStep,
-        onStepTapped: (step) => setState(() => _currentStep = step),
-        onStepContinue: _isCalculating ? null : _continueWizard,
-        onStepCancel: _isCalculating ? null : _cancelWizard,
-        controlsBuilder: (context, details) {
-          final isLastStep = _currentStep == 7;
-          return Padding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+                child: Text('${_currentStep + 1}'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _wizardStepNames[_currentStep],
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Step ${_currentStep + 1} of ${steps.length}'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          LinearProgressIndicator(value: (_currentStep + 1) / steps.length),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: steps.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => ChoiceChip(
+                label: Text('${index + 1}. ${_wizardStepNames[index]}'),
+                selected: index == _currentStep,
+                onSelected: _isCalculating
+                    ? null
+                    : (_) => setState(() => _currentStep = index),
+              ),
+            ),
+          ),
+          const Divider(height: 30),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: KeyedSubtree(
+              key: ValueKey(_currentStep),
+              child: currentStep.content,
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
                 FilledButton.icon(
-                  onPressed: details.onStepContinue,
+                  onPressed: _isCalculating ? null : _continueWizard,
                   icon: _isCalculating
                       ? const SizedBox(
                           width: 15,
@@ -450,159 +508,157 @@ class _AllocationModuleState extends State<AllocationModule> {
                 ),
                 if (_currentStep > 0)
                   TextButton(
-                    onPressed: details.onStepCancel,
+                    onPressed: _isCalculating ? null : _cancelWizard,
                     child: const Text('Back'),
                   ),
-              ],
-            ),
-          );
-        },
-        steps: [
-          Step(
-            title: const Text('Lecturers'),
-            isActive: _currentStep >= 0,
-            content: _buildTextAndFilesStep(
-              label: 'Lecturers',
-              controller: _lecturersController,
-              group: _AllocationFileGroup.lecturers,
-              files: _lecturerFiles,
-            ),
-          ),
-          Step(
-            title: const Text('Venues'),
-            isActive: _currentStep >= 1,
-            content: _buildTextAndFilesStep(
-              label: 'Venues',
-              controller: _venuesController,
-              group: _AllocationFileGroup.venues,
-              files: _venueFiles,
-            ),
-          ),
-          Step(
-            title: const Text('Courses'),
-            isActive: _currentStep >= 2,
-            content: _buildTextAndFilesStep(
-              label: 'Courses',
-              controller: _coursesController,
-              group: _AllocationFileGroup.courses,
-              files: _courseFiles,
-            ),
-          ),
-          Step(
-            title: const Text('Programmes'),
-            isActive: _currentStep >= 3,
-            content: _buildTextAndFilesStep(
-              label: 'Programme data',
-              controller: _programmesController,
-              group: _AllocationFileGroup.programmes,
-              files: _programmeFiles,
-              hintText:
-                  'Course code, Programme, Level\nCSC301, Computer Science, Level 300',
-            ),
-          ),
-          Step(
-            title: const Text('Course Lecturers'),
-            isActive: _currentStep >= 4,
-            content: _buildTextAndFilesStep(
-              label: 'Course and lecturer data',
-              controller: _courseLecturersController,
-              group: _AllocationFileGroup.courseLecturers,
-              files: _courseLecturerFiles,
-              hintText:
-                  'Course code, Lecturer\nCSC301, Dr. Ama Mensah',
-            ),
-          ),
-          Step(
-            title: const Text('Time Slots'),
-            isActive: _currentStep >= 5,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildFieldLabel('Time slots'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _timeSlotsController,
-                  decoration: const InputDecoration(
-                    hintText: '07:00, 12:00, 16:00',
-                    prefixIcon: Icon(Icons.schedule),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Each exam session is limited to a maximum of 2 hours.',
-                ),
-              ],
-            ),
-          ),
-          Step(
-            title: const Text('Semester'),
-            isActive: _currentStep >= 6,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildFieldLabel('Semester'),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedSemester,
-                  decoration: const InputDecoration(
-                    hintText: 'Select semester',
-                    prefixIcon: Icon(Icons.school_outlined),
-                  ),
-                  items: _semesterOptions
-                      .map(
-                        (semester) => DropdownMenuItem(
-                          value: semester,
-                          child: Text(semester),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (semester) {
-                    if (semester == null) {
-                      return;
-                    }
-                    setState(() => _selectedSemester = semester);
-                  },
-                ),
-              ],
-            ),
-          ),
-          Step(
-            title: const Text('Dates'),
-            isActive: _currentStep >= 7,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildFieldLabel('Timetable title'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.title),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _selectDate(isStartDate: true),
-                      icon: const Icon(Icons.event),
-                      label: Text('Start: ${_displayDate(_startDate)}'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _selectDate(isStartDate: false),
-                      icon: const Icon(Icons.event_available),
-                      label: Text('End: ${_displayDate(_endDate)}'),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<Step> _buildWizardSteps() {
+    return [
+      Step(
+        title: const Text('Lecturers'),
+        isActive: _currentStep >= 0,
+        content: _buildTextAndFilesStep(
+          label: 'Lecturers',
+          controller: _lecturersController,
+          group: _AllocationFileGroup.lecturers,
+          files: _lecturerFiles,
+        ),
+      ),
+      Step(
+        title: const Text('Venues'),
+        isActive: _currentStep >= 1,
+        content: _buildTextAndFilesStep(
+          label: 'Venues',
+          controller: _venuesController,
+          group: _AllocationFileGroup.venues,
+          files: _venueFiles,
+        ),
+      ),
+      Step(
+        title: const Text('Courses'),
+        isActive: _currentStep >= 2,
+        content: _buildTextAndFilesStep(
+          label: 'Courses',
+          controller: _coursesController,
+          group: _AllocationFileGroup.courses,
+          files: _courseFiles,
+        ),
+      ),
+      Step(
+        title: const Text('Programmes'),
+        isActive: _currentStep >= 3,
+        content: _buildTextAndFilesStep(
+          label: 'Programme data',
+          controller: _programmesController,
+          group: _AllocationFileGroup.programmes,
+          files: _programmeFiles,
+          hintText:
+              'Course code, Programme, Level\nCSC301, Computer Science, Level 300',
+        ),
+      ),
+      Step(
+        title: const Text('Course Lecturers'),
+        isActive: _currentStep >= 4,
+        content: _buildTextAndFilesStep(
+          label: 'Course and lecturer data',
+          controller: _courseLecturersController,
+          group: _AllocationFileGroup.courseLecturers,
+          files: _courseLecturerFiles,
+          hintText: 'Course code, Lecturer\nCSC301, Dr. Ama Mensah',
+        ),
+      ),
+      Step(
+        title: const Text('Time Slots'),
+        isActive: _currentStep >= 5,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFieldLabel('Time slots'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _timeSlotsController,
+              decoration: const InputDecoration(
+                hintText: '07:00, 12:00, 16:00',
+                prefixIcon: Icon(Icons.schedule),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text('Each exam session is limited to a maximum of 2 hours.'),
+          ],
+        ),
+      ),
+      Step(
+        title: const Text('Semester'),
+        isActive: _currentStep >= 6,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFieldLabel('Semester'),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedSemester,
+              decoration: const InputDecoration(
+                hintText: 'Select semester',
+                prefixIcon: Icon(Icons.school_outlined),
+              ),
+              items: _semesterOptions
+                  .map(
+                    (semester) => DropdownMenuItem(
+                      value: semester,
+                      child: Text(semester),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (semester) {
+                if (semester == null) {
+                  return;
+                }
+                setState(() => _selectedSemester = semester);
+              },
+            ),
+          ],
+        ),
+      ),
+      Step(
+        title: const Text('Dates'),
+        isActive: _currentStep >= 7,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFieldLabel('Timetable title'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(prefixIcon: Icon(Icons.title)),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _selectDate(isStartDate: true),
+                  icon: const Icon(Icons.event),
+                  label: Text('Start: ${_displayDate(_startDate)}'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _selectDate(isStartDate: false),
+                  icon: const Icon(Icons.event_available),
+                  label: Text('End: ${_displayDate(_endDate)}'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _buildTextAndFilesStep({

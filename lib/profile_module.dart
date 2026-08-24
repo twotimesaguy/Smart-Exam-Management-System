@@ -308,6 +308,7 @@ class _ProfileAvatar extends StatelessWidget {
             : imageUrl != null
             ? Image.network(
                 imageUrl!,
+                headers: ApiService.instance.authorizationHeaders,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) =>
                     _InitialsAvatar(username: username),

@@ -70,6 +70,7 @@ when running locally:
 
 ```text
 DATABASE_URL="postgresql://postgres:password@localhost:5432/exam_system"
+AUTH_TOKEN_SECRET="a-long-random-production-secret"
 ```
 
 For Railway, create a PostgreSQL database, then add its `DATABASE_URL` as a
@@ -80,3 +81,13 @@ Timetable generation runs locally in FastAPI. It extracts the lecturer, venue,
 and course records from the uploaded Excel, CSV, Word, or text-based PDF files,
 then applies the selected dates, time slots, venue capacity, no-clash, and
 rest-day constraints before saving the timetable. No Gemini API key is required.
+
+## Authentication and authorization
+
+All API routes except `GET /health`, `POST /auth/login`, and the initial
+bootstrap call to `POST /auth/signup` require an
+`Authorization: Bearer <token>` header. Login tokens are HMAC-signed and
+expire after eight hours by default; set `AUTH_TOKEN_SECRET` and, optionally,
+`AUTH_TOKEN_TTL_SECONDS` in each deployment. The first signup must create an
+admin account. Once any account exists, only an authenticated admin can create
+additional accounts.

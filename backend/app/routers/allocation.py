@@ -4,12 +4,13 @@ from pathlib import Path
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import ValidationError
 
 from app.database import clear_expired_timetables, get_connection
+from app.dependencies.auth import CurrentUser, get_current_user, require_roles
 from app.schemas import (
     AiTimetableChange,
     AiTimetableEditRequest,
@@ -31,11 +32,18 @@ from app.services.timetable import (
     generate_wizard_timetable_entries,
 )
 
-router = APIRouter(prefix="/allocation", tags=["allocation"])
+router = APIRouter(
+    prefix="/allocation",
+    tags=["allocation"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("/generate", response_model=TimetableOut)
-def generate_timetable(payload: TimetableRequest) -> TimetableOut:
+def generate_timetable(
+    payload: TimetableRequest,
+    _: CurrentUser = Depends(require_roles("admin")),
+) -> TimetableOut:
     try:
         generated_entries = generate_timetable_entries(payload)
     except ValueError as error:
@@ -45,7 +53,9 @@ def generate_timetable(payload: TimetableRequest) -> TimetableOut:
 
 
 @router.post("/generate/stored", response_model=TimetableOut)
-def generate_timetable_from_stored_data() -> TimetableOut:
+def generate_timetable_from_stored_data(
+    _: CurrentUser = Depends(require_roles("admin")),
+) -> TimetableOut:
     payload = _stored_timetable_request()
     try:
         generated_entries = generate_timetable_entries(payload)
@@ -73,6 +83,7 @@ async def generate_timetable_from_wizard(
     course_files: list[UploadFile] | None = File(default=None),
     programme_files: list[UploadFile] | None = File(default=None),
     course_lecturer_files: list[UploadFile] | None = File(default=None),
+    _: CurrentUser = Depends(require_roles("admin")),
 ) -> TimetableOut:
     uploaded_data = await _extract_uploaded_documents(
         {
@@ -235,7 +246,10 @@ def timetable_version() -> dict:
 
 
 @router.post("/timetable/ai-edit", response_model=AiTimetableEditResult)
-async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditResult:
+async def ai_edit_timetable(
+    payload: AiTimetableEditRequest,
+    _: CurrentUser = Depends(require_roles("admin")),
+) -> AiTimetableEditResult:
     """Interpret an admin request with Gemini, then validate/write it locally."""
     state = _editable_timetable_state()
     if state is None:
@@ -310,7 +324,9 @@ async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditR
 
 
 @router.delete("/timetables")
-def clear_timetables() -> dict[str, str]:
+def clear_timetables(
+    _: CurrentUser = Depends(require_roles("admin")),
+) -> dict[str, str]:
     with get_connection() as db:
         db.execute("DELETE FROM timetables")
     return {"message": "Generated timetable cleared."}

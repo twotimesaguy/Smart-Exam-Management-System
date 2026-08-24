@@ -149,7 +149,9 @@ class ApiService {
   }
 
   Future<List<ExamAssignment>> fetchAssignments(String username) async {
-    final data = await _getJson('/assignments/$username') as List<dynamic>;
+    final data =
+        await _getJson('/assignments/$username', _freshReadQuery())
+            as List<dynamic>;
     return data
         .map((item) => ExamAssignment.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -165,12 +167,17 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> fetchTimetables() async {
-    final data = await _getJson('/allocation/timetables') as List<dynamic>;
+    final data =
+        await _getJson('/allocation/timetables', _freshReadQuery())
+            as List<dynamic>;
     return data.map((item) => item as Map<String, dynamic>).toList();
   }
 
   Future<Map<String, dynamic>> fetchTimetableVersion() async {
-    final data = await _getJson('/allocation/timetable/version');
+    final data = await _getJson(
+      '/allocation/timetable/version',
+      _freshReadQuery(),
+    );
     return data as Map<String, dynamic>;
   }
 
@@ -248,7 +255,10 @@ class ApiService {
   }
 
   Future<Uint8List> downloadTimetableExcel({required int timetableId}) {
-    return _getBytes('/allocation/timetable/$timetableId/excel');
+    return _getBytes(
+      '/allocation/timetable/$timetableId/excel',
+      _freshReadQuery(),
+    );
   }
 
   Future<void> clearGeneratedTimetables() async {
@@ -262,7 +272,7 @@ class ApiService {
     final request =
         http.MultipartRequest(
             'POST',
-          _uri('/auth/users/$userId/profile-picture'),
+            _uri('/auth/users/$userId/profile-picture'),
           )
           ..files.add(
             await http.MultipartFile.fromPath('profile_picture', imagePath),
@@ -455,7 +465,15 @@ class ApiService {
     Map<String, String?> query = const {},
   ]) async {
     final response = await _withApiErrorMessage(
-      http.get(_uri(path, query)).timeout(_requestTimeout),
+      http
+          .get(
+            _uri(path, query),
+            headers: const {
+              'Cache-Control': 'no-cache, no-store, max-age=0',
+              'Pragma': 'no-cache',
+            },
+          )
+          .timeout(_requestTimeout),
     );
     return _decodeResponse(response);
   }
@@ -465,7 +483,15 @@ class ApiService {
     Map<String, String?> query = const {},
   ]) async {
     final response = await _withApiErrorMessage(
-      http.get(_uri(path, query)).timeout(_requestTimeout),
+      http
+          .get(
+            _uri(path, query),
+            headers: const {
+              'Cache-Control': 'no-cache, no-store, max-age=0',
+              'Pragma': 'no-cache',
+            },
+          )
+          .timeout(_requestTimeout),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       _decodeResponse(response);
@@ -550,6 +576,13 @@ class ApiService {
     return 'No API server is configured. Deploy the FastAPI backend, then run '
         'or build the app with --dart-define=API_BASE_URL=https://your-api-url.';
   }
+
+  Map<String, String> _freshReadQuery() => {
+    // Some mobile browsers and proxies cache a repeated GET URL despite the
+    // server response being dynamic. A unique query value makes every
+    // timetable read reflect the latest committed AI edit.
+    '_': DateTime.now().microsecondsSinceEpoch.toString(),
+  };
 
   dynamic _decodeResponse(http.Response response) {
     dynamic body;

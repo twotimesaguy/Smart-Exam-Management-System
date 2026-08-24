@@ -167,9 +167,31 @@ class AppEntry extends StatefulWidget {
 class _AppEntryState extends State<AppEntry> {
   LocalUser? _activeUser;
 
+  @override
+  void initState() {
+    super.initState();
+    ApiService.instance.authenticationRequired.addListener(_requireLogin);
+  }
+
+  @override
+  void dispose() {
+    ApiService.instance.authenticationRequired.removeListener(_requireLogin);
+    super.dispose();
+  }
+
   void _onAuthenticated(LocalUser user) {
+    ApiService.instance.setAccessToken(user.token);
     setState(() {
       _activeUser = user;
+    });
+  }
+
+  void _requireLogin() {
+    if (!ApiService.instance.authenticationRequired.value || !mounted) {
+      return;
+    }
+    setState(() {
+      _activeUser = null;
     });
   }
 

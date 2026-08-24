@@ -36,7 +36,6 @@ class ApiService {
 
   static final ApiService instance = ApiService._();
   static const Duration _requestTimeout = Duration(minutes: 2);
-  String? _accessToken;
 
   static const String _configuredBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -59,13 +58,6 @@ class ApiService {
 
     return 'https://flutterapplication1-production-8866.up.railway.app';
   }
-
-  Map<String, String> get authorizationHeaders {
-    final token = _accessToken;
-    return token == null || token.isEmpty ? const {} : {'Authorization': 'Bearer $token'};
-  }
-
-  void clearAccessToken() => _accessToken = null;
 
   Uri _uri(String path, [Map<String, String?> query = const {}]) {
     if (baseUrl.isEmpty) {
@@ -91,7 +83,7 @@ class ApiService {
       'username': username,
       'password': password,
     });
-    return _authUserFromResponse(data, saveToken: true);
+    return _authUserFromResponse(data);
   }
 
   Future<LocalUser> signUp({
@@ -104,7 +96,7 @@ class ApiService {
       'password': password,
       'role': role.apiValue,
     });
-    return _authUserFromResponse(data, saveToken: true);
+    return _authUserFromResponse(data);
   }
 
   Future<List<RegisteredStudent>> fetchStudents() async {
@@ -139,7 +131,6 @@ class ApiService {
     required List<int> faceImageBytes,
   }) async {
     final request = http.MultipartRequest('POST', _uri('/students'))
-      ..headers.addAll(authorizationHeaders)
       ..fields.addAll({
         'student_id': studentId,
         'full_name': fullName,
@@ -217,7 +208,6 @@ class ApiService {
 
     final request =
         http.MultipartRequest('POST', _uri('/allocation/generate/wizard'))
-          ..headers.addAll(authorizationHeaders)
           ..fields.addAll({
             'title': title,
             'start_date': startDate,
@@ -272,9 +262,8 @@ class ApiService {
     final request =
         http.MultipartRequest(
             'POST',
-            _uri('/auth/users/$userId/profile-picture'),
+          _uri('/auth/users/$userId/profile-picture'),
           )
-          ..headers.addAll(authorizationHeaders)
           ..files.add(
             await http.MultipartFile.fromPath('profile_picture', imagePath),
           );
@@ -288,7 +277,6 @@ class ApiService {
     required String recordedBy,
   }) async {
     final request = http.MultipartRequest('POST', _uri('/attendance/recognize'))
-      ..headers.addAll(authorizationHeaders)
       ..fields['recorded_by'] = recordedBy
       ..files.add(
         await http.MultipartFile.fromPath('face_image', faceImagePath),
@@ -308,7 +296,6 @@ class ApiService {
   }) async {
     final request =
         http.MultipartRequest('POST', _uri('/attendance/recognize-and-record'))
-          ..headers.addAll(authorizationHeaders)
           ..fields.addAll({
             'course_title': courseTitle,
             'course_code': courseCode,
@@ -342,7 +329,6 @@ class ApiService {
     String? studentStatementAudioFileName,
   }) async {
     final request = http.MultipartRequest('POST', _uri('/malpractice/reports'))
-      ..headers.addAll(authorizationHeaders)
       ..fields.addAll({
         'student_id': studentId,
         'student_level': studentLevel,
@@ -407,7 +393,7 @@ class ApiService {
     final request = http.MultipartRequest(
       'POST',
       _uri('/malpractice/transcriptions'),
-    )..headers.addAll(authorizationHeaders);
+    );
     if (bytes != null) {
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -464,18 +450,12 @@ class ApiService {
     return _getBytes('/malpractice/reports/export/pdf');
   }
 
-  Future<Uint8List> downloadMalpracticeStatementAudio(int reportId) {
-    return _getBytes('/malpractice/reports/$reportId/statement-audio');
-  }
-
   Future<dynamic> _getJson(
     String path, [
     Map<String, String?> query = const {},
   ]) async {
     final response = await _withApiErrorMessage(
-      http
-          .get(_uri(path, query), headers: authorizationHeaders)
-          .timeout(_requestTimeout),
+      http.get(_uri(path, query)).timeout(_requestTimeout),
     );
     return _decodeResponse(response);
   }
@@ -485,9 +465,7 @@ class ApiService {
     Map<String, String?> query = const {},
   ]) async {
     final response = await _withApiErrorMessage(
-      http
-          .get(_uri(path, query), headers: authorizationHeaders)
-          .timeout(_requestTimeout),
+      http.get(_uri(path, query)).timeout(_requestTimeout),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       _decodeResponse(response);
@@ -500,7 +478,7 @@ class ApiService {
       http
           .post(
             _uri(path),
-            headers: {'Content-Type': 'application/json', ...authorizationHeaders},
+            headers: {'Content-Type': 'application/json'},
             body: jsonEncode(body),
           )
           .timeout(_requestTimeout),
@@ -513,7 +491,7 @@ class ApiService {
       http
           .patch(
             _uri(path),
-            headers: {'Content-Type': 'application/json', ...authorizationHeaders},
+            headers: {'Content-Type': 'application/json'},
             body: jsonEncode(body),
           )
           .timeout(_requestTimeout),
@@ -523,9 +501,7 @@ class ApiService {
 
   Future<dynamic> _deleteJson(String path) async {
     final response = await _withApiErrorMessage(
-      http
-          .delete(_uri(path), headers: authorizationHeaders)
-          .timeout(_requestTimeout),
+      http.delete(_uri(path)).timeout(_requestTimeout),
     );
     return _decodeResponse(response);
   }
@@ -596,14 +572,10 @@ class ApiService {
     return body;
   }
 
-  LocalUser _authUserFromResponse(dynamic data, {required bool saveToken}) {
+  LocalUser _authUserFromResponse(dynamic data) {
     final map = data as Map<String, dynamic>;
     final user = map['user'] as Map<String, dynamic>;
-    final token = map['token'] as String?;
-    if (saveToken && token != null && token.isNotEmpty) {
-      _accessToken = token;
-    }
-    return _userFromMap(user, token: token);
+    return _userFromMap(user, token: map['token'] as String?);
   }
 
   LocalUser _userFromMap(Map<String, dynamic> user, {String? token}) {

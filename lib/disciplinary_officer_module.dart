@@ -379,7 +379,7 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
               if (report.studentStatementAudioUrl != null) ...[
                 const SizedBox(height: 12),
                 _VoiceRecordingPlayer(
-                  reportId: report.id,
+                  audioUrl: report.studentStatementAudioUrl!,
                 ),
               ],
               const SizedBox(height: 18),
@@ -436,9 +436,9 @@ class _CaseHandlingSheetState extends State<_CaseHandlingSheet> {
 }
 
 class _VoiceRecordingPlayer extends StatefulWidget {
-  const _VoiceRecordingPlayer({required this.reportId});
+  const _VoiceRecordingPlayer({required this.audioUrl});
 
-  final int reportId;
+  final String audioUrl;
 
   @override
   State<_VoiceRecordingPlayer> createState() => _VoiceRecordingPlayerState();
@@ -476,10 +476,7 @@ class _VoiceRecordingPlayerState extends State<_VoiceRecordingPlayer> {
           setState(() => _isPlaying = false);
         }
       } else {
-        final audio = await ApiService.instance.downloadMalpracticeStatementAudio(
-          widget.reportId,
-        );
-        await _player.play(BytesSource(audio));
+        await _player.play(UrlSource(widget.audioUrl));
         if (mounted) {
           setState(() => _isPlaying = true);
         }
@@ -577,7 +574,6 @@ class _EvidenceImageTile extends StatelessWidget {
             color: colorScheme.surfaceContainerHighest,
             child: Image.network(
               imageUrl,
-              headers: ApiService.instance.authorizationHeaders,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => const Center(
                 child: Icon(Icons.broken_image_outlined, size: 32),

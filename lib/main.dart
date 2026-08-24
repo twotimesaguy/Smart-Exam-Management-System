@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api_service.dart';
 import 'package:flutter_application_1/auth_page.dart';
 import 'package:flutter_application_1/dashboard.dart';
 import 'package:flutter_application_1/local_auth.dart';
@@ -174,7 +173,6 @@ class _AppEntryState extends State<AppEntry> {
   }
 
   void _logout() {
-    ApiService.instance.clearAccessToken();
     setState(() {
       _activeUser = null;
     });

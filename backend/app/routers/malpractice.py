@@ -2,11 +2,10 @@ import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from app.database import get_connection
-from app.dependencies.auth import CurrentUser, get_current_user, require_roles
 from app.schemas import MalpracticeStatusUpdate
 from app.services.malpractice_forwarder import forward_report
 from app.services.pdf_export import build_malpractice_pdf
@@ -16,17 +15,12 @@ from app.services.transcription import (
     transcribe_audio,
 )
 
-router = APIRouter(
-    prefix="/malpractice",
-    tags=["malpractice"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/malpractice", tags=["malpractice"])
 
 
 @router.post("/transcriptions")
 async def transcribe_student_statement(
     audio: UploadFile = File(...),
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
 ) -> dict[str, str]:
     """Transcribe a short voice note before it is attached to a case report."""
     audio_bytes = await audio.read()
@@ -58,7 +52,6 @@ async def create_malpractice_report(
     student_face_image: UploadFile | None = File(None),
     foreign_material_image: UploadFile | None = File(None),
     student_statement_audio: UploadFile | None = File(None),
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
 ) -> dict:
     student_face_path = await _save_optional_file("student_face", student_id, student_face_image)
     material_path = await _save_optional_file("foreign_material", student_id, foreign_material_image)
@@ -119,9 +112,7 @@ async def create_malpractice_report(
 
 
 @router.get("/reports")
-def list_malpractice_reports(
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
-) -> list[dict]:
+def list_malpractice_reports() -> list[dict]:
     with get_connection() as db:
         rows = db.execute(
             "SELECT * FROM malpractice_reports ORDER BY created_at DESC"
@@ -130,9 +121,7 @@ def list_malpractice_reports(
 
 
 @router.get("/reports/export/pdf")
-def export_malpractice_reports_pdf(
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
-) -> FileResponse:
+def export_malpractice_reports_pdf() -> FileResponse:
     with get_connection() as db:
         rows = db.execute(
             "SELECT * FROM malpractice_reports ORDER BY created_at ASC"
@@ -143,11 +132,7 @@ def export_malpractice_reports_pdf(
 
 
 @router.get("/reports/{report_id}/evidence/{evidence_type}")
-def get_malpractice_evidence(
-    report_id: int,
-    evidence_type: str,
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
-) -> FileResponse:
+def get_malpractice_evidence(report_id: int, evidence_type: str) -> FileResponse:
     image_columns = {
         "student-face": "student_face_image_path",
         "foreign-material": "foreign_material_image_path",
@@ -177,10 +162,7 @@ def get_malpractice_evidence(
 
 
 @router.get("/reports/{report_id}/statement-audio")
-def get_student_statement_audio(
-    report_id: int,
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
-) -> Response:
+def get_student_statement_audio(report_id: int) -> Response:
     with get_connection() as db:
         row = db.execute(
             """
@@ -207,7 +189,6 @@ def get_student_statement_audio(
 def update_malpractice_report(
     report_id: int,
     payload: MalpracticeStatusUpdate,
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
 ) -> dict:
     with get_connection() as db:
         row = db.execute(
@@ -239,10 +220,7 @@ def update_malpractice_report(
 
 
 @router.post("/reports/{report_id}/forward")
-async def forward_existing_report(
-    report_id: int,
-    _: CurrentUser = Depends(require_roles("admin", "disciplinary_officer")),
-) -> dict:
+async def forward_existing_report(report_id: int) -> dict:
     with get_connection() as db:
         row = db.execute(
             "SELECT * FROM malpractice_reports WHERE id = ?",

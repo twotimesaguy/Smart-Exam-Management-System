@@ -1,20 +1,15 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.database import get_connection
-from app.dependencies.auth import CurrentUser, get_current_user, require_roles
 from app.schemas import AttendanceCreate, AttendanceOut, RecognizedStudentOut
 from app.services.face_recognition import face_service
 from app.services.pdf_export import build_attendance_pdf
 
-router = APIRouter(
-    prefix="/attendance",
-    tags=["attendance"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/attendance", tags=["attendance"])
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +17,6 @@ logger = logging.getLogger(__name__)
 async def recognize_student(
     recorded_by: str = Form("System"),
     face_image: UploadFile = File(...),
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
 ) -> RecognizedStudentOut:
     face_image_data, captured_embedding = await _embedding_from_upload(face_image)
 
@@ -189,10 +183,7 @@ async def _embedding_from_upload(face_image: UploadFile) -> tuple[bytes, list[fl
 
 
 @router.post("/record", response_model=AttendanceOut)
-def record_attendance(
-    payload: AttendanceCreate,
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
-) -> AttendanceOut:
+def record_attendance(payload: AttendanceCreate) -> AttendanceOut:
     with get_connection() as db:
         student = db.execute(
             "SELECT student_id, full_name, face_image_data FROM students WHERE student_id = ?",
@@ -235,7 +226,6 @@ async def recognize_and_record(
     exam_date: str = Form(...),
     recorded_by: str = Form(...),
     face_image: UploadFile = File(...),
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
 ) -> AttendanceOut:
     face_image_data, captured_embedding = await _embedding_from_upload(face_image)
 
@@ -285,10 +275,7 @@ async def recognize_and_record(
 
 
 @router.get("/records", response_model=list[AttendanceOut])
-def list_attendance_records(
-    course_code: str | None = None,
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
-) -> list[AttendanceOut]:
+def list_attendance_records(course_code: str | None = None) -> list[AttendanceOut]:
     query = """
         SELECT
             id, student_id, full_name, course_title, course_code, venue, recorded_by,
@@ -308,10 +295,7 @@ def list_attendance_records(
 
 @router.get("/export/pdf")
 def export_attendance_pdf(
-    course_code: str,
-    exam_date: str,
-    course_title: str | None = None,
-    _: CurrentUser = Depends(require_roles("admin", "invigilator")),
+    course_code: str, exam_date: str, course_title: str | None = None
 ) -> FileResponse:
     query = """
         SELECT

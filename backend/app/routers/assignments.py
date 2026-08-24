@@ -1,26 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from app.database import get_connection
-from app.dependencies.auth import CurrentUser, get_current_user, require_roles
 from app.schemas import AssignmentStatusUpdate
 
-router = APIRouter(
-    prefix="/assignments",
-    tags=["assignments"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/assignments", tags=["assignments"])
 
 
 @router.get("/{invigilator_username}")
-def assignments_for_invigilator(
-    invigilator_username: str,
-    current_user: CurrentUser = Depends(require_roles("admin", "invigilator")),
-) -> list[dict]:
-    if (
-        current_user.role == "invigilator"
-        and current_user.username.casefold() != invigilator_username.casefold()
-    ):
-        raise HTTPException(status_code=403, detail="You can only view your own assignments.")
+def assignments_for_invigilator(invigilator_username: str) -> list[dict]:
     with get_connection() as db:
         rows = db.execute(
             """
@@ -47,28 +34,8 @@ def assignments_for_invigilator(
 
 
 @router.patch("/{assignment_id}/status")
-def update_assignment_status(
-    assignment_id: int,
-    payload: AssignmentStatusUpdate,
-    current_user: CurrentUser = Depends(require_roles("admin", "invigilator")),
-) -> dict:
+def update_assignment_status(assignment_id: int, payload: AssignmentStatusUpdate) -> dict:
     with get_connection() as db:
-        if current_user.role == "invigilator":
-            assignment = db.execute(
-                """
-                SELECT assignments.id
-                FROM assignments
-                JOIN timetable_entries ON timetable_entries.id = assignments.timetable_entry_id
-                WHERE assignments.id = ?
-                  AND lower(timetable_entries.invigilator_username) = lower(?)
-                """,
-                (assignment_id, current_user.username),
-            ).fetchone()
-            if assignment is None:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only update your own assignments.",
-                )
         cursor = db.execute(
             "UPDATE assignments SET status = ? WHERE id = ?",
             (payload.status, assignment_id),

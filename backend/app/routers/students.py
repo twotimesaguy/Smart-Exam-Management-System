@@ -1,20 +1,15 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.database import BASE_DIR, get_connection
-from app.dependencies.auth import CurrentUser, get_current_user, require_roles
 from app.schemas import StudentOut
 from app.services.face_recognition import face_service
 from app.services.pdf_export import build_students_pdf
 
-router = APIRouter(
-    prefix="/students",
-    tags=["students"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/students", tags=["students"])
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +20,6 @@ async def create_student(
     programme: str = Form(...),
     level: str = Form(...),
     face_image: UploadFile = File(...),
-    _: CurrentUser = Depends(require_roles("admin")),
 ) -> StudentOut:
     with get_connection() as db:
         existing = db.execute(
@@ -82,9 +76,7 @@ async def create_student(
 
 
 @router.get("", response_model=list[StudentOut])
-def list_students(
-    _: CurrentUser = Depends(require_roles("admin")),
-) -> list[StudentOut]:
+def list_students() -> list[StudentOut]:
     with get_connection() as db:
         rows = db.execute(
             """
@@ -97,9 +89,7 @@ def list_students(
 
 
 @router.get("/export/pdf")
-def export_students_pdf(
-    _: CurrentUser = Depends(require_roles("admin")),
-) -> FileResponse:
+def export_students_pdf() -> FileResponse:
     with get_connection() as db:
         rows = db.execute(
             """

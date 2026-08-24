@@ -2,11 +2,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from psycopg.errors import UniqueViolation
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.database import BASE_DIR, get_connection
-from app.dependencies.auth import CurrentUser, get_current_user, get_optional_current_user
 from app.schemas import AuthResponse, UserCreate, UserLogin, UserOut
 from app.services.security import hash_password, issue_token, verify_password
 
@@ -14,36 +13,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def signup(
-    payload: UserCreate,
-    current_user: CurrentUser | None = Depends(get_optional_current_user),
-) -> AuthResponse:
+def signup(payload: UserCreate) -> AuthResponse:
     username = payload.username.strip()
     password = payload.password.strip()
 
     try:
         with get_connection() as db:
-            existing_user_count = db.execute(
-                "SELECT COUNT(*) AS count FROM users"
-            ).fetchone()["count"]
-            if existing_user_count:
-                if current_user is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Only an authenticated admin can create additional accounts.",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                if current_user.role != "admin":
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Only an admin can create additional accounts.",
-                    )
-            elif payload.role != "admin":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="The first account must be an admin account.",
-                )
-
             existing_user = db.execute(
                 "SELECT id FROM users WHERE lower(username) = lower(?)",
                 (username,),
@@ -82,7 +57,7 @@ def signup(
             role=payload.role,
             profile_image_path=None,
         ),
-        token=issue_token(user_id=user_id, username=username, role=payload.role),
+        token=issue_token(),
     )
 
 
@@ -113,11 +88,7 @@ def login(payload: UserLogin) -> AuthResponse:
             role=user["role"],
             profile_image_path=user["profile_image_path"],
         ),
-        token=issue_token(
-            user_id=user["id"],
-            username=user["username"],
-            role=user["role"],
-        ),
+        token=issue_token(),
     )
 
 
@@ -125,13 +96,7 @@ def login(payload: UserLogin) -> AuthResponse:
 async def upload_profile_picture(
     user_id: int,
     profile_picture: UploadFile = File(...),
-    current_user: CurrentUser = Depends(get_current_user),
 ) -> UserOut:
-    if current_user.id != user_id and current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update your own profile picture.",
-        )
     extension = Path(profile_picture.filename or "profile.jpg").suffix or ".jpg"
     image_dir = BASE_DIR / "data" / "profile_pictures"
     image_dir.mkdir(parents=True, exist_ok=True)
@@ -156,10 +121,7 @@ async def upload_profile_picture(
 
 
 @router.get("/users/{user_id}/profile-picture")
-def get_profile_picture(
-    user_id: int,
-    _: CurrentUser = Depends(get_current_user),
-) -> FileResponse:
+def get_profile_picture(user_id: int) -> FileResponse:
     with get_connection() as db:
         user = db.execute(
             "SELECT profile_image_path FROM users WHERE id = ?",

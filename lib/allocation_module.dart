@@ -1022,11 +1022,6 @@ class _AllocationModuleState extends State<AllocationModule> {
                       runSpacing: 10,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: () => _showLiveTimetable(timetable),
-                          icon: const Icon(Icons.visibility_outlined),
-                          label: const Text('View Live Timetable'),
-                        ),
-                        OutlinedButton.icon(
                           onPressed: _isOpeningExcel
                               ? null
                               : () => _openTimetableExcel(timetable),
@@ -1075,84 +1070,6 @@ class _AllocationModuleState extends State<AllocationModule> {
     );
   }
 
-  Future<void> _showLiveTimetable(Map<String, dynamic> timetable) async {
-    final entries = (timetable['entries'] as List<dynamic>)
-        .cast<Map<dynamic, dynamic>>();
-    var search = '';
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final matchingEntries = entries.where((entry) {
-            if (search.isEmpty) {
-              return true;
-            }
-            final searchable = [
-              entry['id'],
-              entry['course_code'],
-              entry['course_title'],
-              entry['exam_date'],
-              entry['start_time'],
-              entry['end_time'],
-              entry['venue'],
-              entry['invigilator_username'],
-            ].join(' ').toLowerCase();
-            return searchable.contains(search);
-          }).toList();
-
-          return AlertDialog(
-            title: Text('Live timetable • ${matchingEntries.length} entries'),
-            content: SizedBox(
-              width: 760,
-              height: 520,
-              child: Column(
-                children: [
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Find course, room, date, invigilator, or exam ID',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (value) {
-                      setDialogState(() => search = value.trim().toLowerCase());
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: matchingEntries.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final entry = matchingEntries[index];
-                        return ListTile(
-                          dense: true,
-                          title: Text(
-                            '${entry['course_code']} — ${entry['course_title']}',
-                          ),
-                          subtitle: Text(
-                            'Exam ${entry['id']} • ${entry['exam_date']} • '
-                            '${entry['start_time']}–${entry['end_time']} • '
-                            '${entry['venue']} • ${entry['invigilator_username']}',
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
 }
 
 enum _AllocationFileGroup {

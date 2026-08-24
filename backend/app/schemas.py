@@ -1,3 +1,5 @@
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -74,6 +76,31 @@ class TimetableOut(BaseModel):
     title: str
     exam_period: str
     entries: list[TimetableEntryOut]
+    version: int = 1
+    last_updated: str = ""
+
+
+class AiTimetableEditRequest(BaseModel):
+    prompt: str = Field(min_length=3, max_length=4000)
+
+
+class AiTimetableChange(BaseModel):
+    """A proposed change only; the server remains responsible for all writes."""
+
+    operation: Literal["update", "create"] = "update"
+    exam_id: int | None = None
+    field: str | None = None
+    old: Any | None = None
+    new: Any | None = None
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class AiTimetableEditResult(BaseModel):
+    applied: list[dict[str, Any]] = Field(default_factory=list)
+    rejected: list[dict[str, Any]] = Field(default_factory=list)
+    unresolved: list[str] = Field(default_factory=list)
+    version: int | None = None
+    last_updated: str | None = None
 
 
 class AttendanceCreate(BaseModel):

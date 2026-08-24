@@ -169,6 +169,18 @@ class ApiService {
     return data.map((item) => item as Map<String, dynamic>).toList();
   }
 
+  Future<Map<String, dynamic>> fetchTimetableVersion() async {
+    final data = await _getJson('/allocation/timetable/version');
+    return data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> askAiToEditTimetable(String prompt) async {
+    final data = await _postJson('/allocation/timetable/ai-edit', {
+      'prompt': prompt,
+    });
+    return data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> runStoredSmartAllocation() async {
     final data = await _postJson('/allocation/generate/stored', {});
     return data as Map<String, dynamic>;
@@ -373,7 +385,9 @@ class ApiService {
     String? filename,
   }) async {
     if (bytes == null && path == null) {
-      throw const ApiException('No voice recording is available to transcribe.');
+      throw const ApiException(
+        'No voice recording is available to transcribe.',
+      );
     }
 
     final request = http.MultipartRequest(

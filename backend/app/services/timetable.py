@@ -579,6 +579,69 @@ def _validate_exam_window(entry: TimetableEntryOut) -> None:
         )
 
 
+def validate_live_timetable_entries(
+    entries: list[TimetableEntryOut],
+    *,
+    venues: list[VenueInput],
+    invigilators: list[str],
+) -> None:
+    """Validate an edited timetable against the same live scheduling rules.
+
+    Unlike generation, AI edits may propose arbitrary start times.  Therefore
+    this validator checks overlapping time ranges, not just matching slots.
+    Batches of the *same* course and student group may run concurrently in
+    different venues, which is how the existing scheduler splits large courses.
+    """
+    venues_by_name = {venue.name.lower(): venue for venue in venues}
+    invigilators_by_name = {name.lower() for name in invigilators}
+
+    for entry in entries:
+        try:
+            datetime.strptime(entry.exam_date[:10], "%Y-%m-%d")
+        except ValueError as error:
+            raise ValueError(
+                f"{entry.course_code} has an invalid exam date: {entry.exam_date}."
+            ) from error
+        _validate_exam_window(entry)
+        venue = venues_by_name.get(entry.venue.lower())
+        if venue is None:
+            raise ValueError(f"{entry.venue} is not a known venue with a recorded capacity.")
+        if entry.student_count > _effective_capacity(venue):
+            raise ValueError(
+                f"{entry.course_code} exceeds the recorded capacity for {venue.name}."
+            )
+        if entry.invigilator_username.lower() not in invigilators_by_name:
+            raise ValueError(
+                f"{entry.invigilator_username} is not a known invigilator."
+            )
+
+    for index, entry in enumerate(entries):
+        for other in entries[index + 1 :]:
+            if entry.exam_date != other.exam_date or not _times_overlap(entry, other):
+                continue
+            if entry.venue.lower() == other.venue.lower():
+                raise ValueError(
+                    f"{entry.venue} is double-booked on {entry.exam_date}."
+                )
+            if entry.invigilator_username.lower() == other.invigilator_username.lower():
+                raise ValueError(
+                    f"{entry.invigilator_username} is double-booked on {entry.exam_date}."
+                )
+            same_student_group = entry.student_level.lower() == other.student_level.lower()
+            if same_student_group and entry.course_code != other.course_code:
+                raise ValueError(
+                    f"{entry.student_level} has overlapping exams ({entry.course_code} and {other.course_code}) on {entry.exam_date}."
+                )
+
+
+def _times_overlap(first: TimetableEntryOut, second: TimetableEntryOut) -> bool:
+    first_start = datetime.strptime(first.start_time[:5], "%H:%M")
+    first_end = datetime.strptime(first.end_time[:5], "%H:%M")
+    second_start = datetime.strptime(second.start_time[:5], "%H:%M")
+    second_end = datetime.strptime(second.end_time[:5], "%H:%M")
+    return first_start < second_end and second_start < first_end
+
+
 def _next_available_invigilator(
     invigilators: list[str],
     exam_date: str,

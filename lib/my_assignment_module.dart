@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api_service.dart';
 import 'package:flutter_application_1/assignment_registry.dart';
@@ -17,18 +19,29 @@ class _MyAssignmentModuleState extends State<MyAssignmentModule> {
   final AssignmentRegistry _registry = AssignmentRegistry.instance;
   bool _isLoading = true;
   String? _errorMessage;
+  Timer? _timetablePollTimer;
+  String? _timetableVersion;
 
   @override
   void initState() {
     super.initState();
     _loadAssignments();
+    _startTimetablePolling();
   }
 
-  Future<void> _loadAssignments() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  @override
+  void dispose() {
+    _timetablePollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadAssignments({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final assignments = await ApiService.instance.fetchAssignments(
@@ -41,6 +54,32 @@ class _MyAssignmentModuleState extends State<MyAssignmentModule> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  void _startTimetablePolling() {
+    _checkForTimetableUpdate();
+    _timetablePollTimer = Timer.periodic(
+      const Duration(seconds: 9),
+      (_) => _checkForTimetableUpdate(),
+    );
+  }
+
+  Future<void> _checkForTimetableUpdate() async {
+    try {
+      final version = await ApiService.instance.fetchTimetableVersion();
+      final versionKey =
+          '${version['timetable_id'] ?? 'none'}:'
+          '${version['version'] ?? 0}:'
+          '${version['last_updated'] ?? ''}';
+      if (_timetableVersion != null && _timetableVersion != versionKey) {
+        await _loadAssignments(showLoading: false);
+      }
+      if (mounted) {
+        setState(() => _timetableVersion = versionKey);
+      }
+    } catch (_) {
+      // Do not interrupt invigilation work if a background check fails.
     }
   }
 

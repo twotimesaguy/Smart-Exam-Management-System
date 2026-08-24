@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api_service.dart';
@@ -33,6 +35,7 @@ class _AllocationModuleState extends State<AllocationModule> {
   final _coursesController = TextEditingController();
   final _programmesController = TextEditingController();
   final _courseLecturersController = TextEditingController();
+  final _aiEditController = TextEditingController();
   final _timeSlotsController = TextEditingController(
     text: '07:00, 12:00, 16:00',
   );
@@ -45,6 +48,9 @@ class _AllocationModuleState extends State<AllocationModule> {
   bool _isLoading = true;
   bool _isOpeningExcel = false;
   bool _isClearingTimetable = false;
+  bool _isApplyingAiEdit = false;
+  Timer? _timetablePollTimer;
+  String? _timetableVersion;
   List<Map<String, dynamic>> _timetables = const [];
   List<PlatformFile> _lecturerFiles = const [];
   List<PlatformFile> _venueFiles = const [];
@@ -57,6 +63,7 @@ class _AllocationModuleState extends State<AllocationModule> {
   void initState() {
     super.initState();
     _loadTimetables();
+    _startTimetablePolling();
   }
 
   @override
@@ -67,15 +74,19 @@ class _AllocationModuleState extends State<AllocationModule> {
     _coursesController.dispose();
     _programmesController.dispose();
     _courseLecturersController.dispose();
+    _aiEditController.dispose();
     _timeSlotsController.dispose();
+    _timetablePollTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadTimetables() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadTimetables({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final timetables = await ApiService.instance.fetchTimetables();
@@ -90,6 +101,37 @@ class _AllocationModuleState extends State<AllocationModule> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _startTimetablePolling() {
+    _checkForTimetableUpdate();
+    _timetablePollTimer = Timer.periodic(
+      const Duration(seconds: 9),
+      (_) => _checkForTimetableUpdate(),
+    );
+  }
+
+  Future<void> _checkForTimetableUpdate() async {
+    try {
+      final version = await ApiService.instance.fetchTimetableVersion();
+      final versionKey = _timetableVersionKey(version);
+      final hasChanged =
+          _timetableVersion != null && _timetableVersion != versionKey;
+      if (hasChanged) {
+        await _loadTimetables(showLoading: false);
+      }
+      if (mounted) {
+        setState(() => _timetableVersion = versionKey);
+      }
+    } catch (_) {
+      // Polling is opportunistic; visible requests continue to show errors.
+    }
+  }
+
+  String _timetableVersionKey(Map<String, dynamic> version) {
+    return '${version['timetable_id'] ?? 'none'}:'
+        '${version['version'] ?? 0}:'
+        '${version['last_updated'] ?? ''}';
   }
 
   Future<void> _pickFiles(_AllocationFileGroup group) async {
@@ -274,6 +316,98 @@ class _AllocationModuleState extends State<AllocationModule> {
     }
   }
 
+  Future<void> _submitAiTimetableEdit() async {
+    final prompt = _aiEditController.text.trim();
+    if (prompt.isEmpty || _isApplyingAiEdit) {
+      return;
+    }
+
+    setState(() => _isApplyingAiEdit = true);
+    try {
+      final result = await ApiService.instance.askAiToEditTimetable(prompt);
+      if (!mounted) {
+        return;
+      }
+      _aiEditController.clear();
+      await _loadTimetables(showLoading: false);
+      await _checkForTimetableUpdate();
+      if (!mounted) {
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('AI timetable update'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(child: Text(_aiEditSummary(result))),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingAiEdit = false);
+      }
+    }
+  }
+
+  String _aiEditSummary(Map<String, dynamic> result) {
+    final sections = <String>[];
+    final applied = (result['applied'] as List<dynamic>? ?? const [])
+        .cast<Map<dynamic, dynamic>>();
+    final rejected = (result['rejected'] as List<dynamic>? ?? const [])
+        .cast<Map<dynamic, dynamic>>();
+    final unresolved = (result['unresolved'] as List<dynamic>? ?? const [])
+        .map((item) => item.toString())
+        .toList();
+
+    if (applied.isNotEmpty) {
+      sections.add('Applied\n${applied.map(_describeAiChange).join('\n')}');
+    }
+    if (rejected.isNotEmpty) {
+      sections.add(
+        'Not applied\n${rejected.map((change) => '${_describeAiChange(change)} — ${change['reason'] ?? 'Could not validate this change.'}').join('\n')}',
+      );
+    }
+    if (unresolved.isNotEmpty) {
+      sections.add(
+        'Needs clarification\n${unresolved.map((item) => '• $item').join('\n')}',
+      );
+    }
+    return sections.isEmpty
+        ? 'The AI did not find a timetable change to apply.'
+        : sections.join('\n\n');
+  }
+
+  String _describeAiChange(Map<dynamic, dynamic> change) {
+    if (change['operation'] == 'create') {
+      return '• Added ${change['course_code'] ?? 'a new exam'}';
+    }
+    final exam = change['exam_id'] == null
+        ? 'exam'
+        : 'exam ${change['exam_id']}';
+    final field = change['field'] ?? 'change';
+    if (change['new'] == null) {
+      return '• $exam: $field';
+    }
+    return '• $exam: $field → ${change['new']}';
+  }
+
   Future<void> _confirmClearTimetable() async {
     final shouldClear = await showDialog<bool>(
       context: context,
@@ -405,6 +539,8 @@ class _AllocationModuleState extends State<AllocationModule> {
         children: [
           _buildWizard(colorScheme),
           const SizedBox(height: 20),
+          _buildAiTimetableEditor(colorScheme),
+          const SizedBox(height: 20),
           if (_isLoading)
             const Center(child: CircularProgressIndicator())
           else if (_errorMessage != null)
@@ -413,6 +549,64 @@ class _AllocationModuleState extends State<AllocationModule> {
               child: Text(_errorMessage!, textAlign: TextAlign.center),
             ),
           if (!_isLoading) _buildTimetableState(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiTimetableEditor(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, color: colorScheme.primary),
+              const SizedBox(width: 10),
+              Text(
+                'AI timetable editor',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Describe the change you need. Changes are checked against rooms, '
+            'invigilators, capacity, and student clashes before they are saved.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _aiEditController,
+            minLines: 2,
+            maxLines: 4,
+            enabled: !_isApplyingAiEdit,
+            decoration: const InputDecoration(
+              labelText: 'Ask AI to update the timetable...',
+              hintText: 'Move all Physics exams to next week',
+              prefixIcon: Icon(Icons.edit_calendar_outlined),
+            ),
+            onSubmitted: (_) => _submitAiTimetableEdit(),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _isApplyingAiEdit ? null : _submitAiTimetableEdit,
+            icon: _isApplyingAiEdit
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome),
+            label: Text(
+              _isApplyingAiEdit ? 'Checking changes...' : 'Apply AI request',
+            ),
+          ),
         ],
       ),
     );

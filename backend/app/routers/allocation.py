@@ -546,11 +546,19 @@ def _entry_duration_minutes(entry: dict) -> int:
 def _save_ai_timetable_edits(*, state: dict, final_entries: list[dict]) -> tuple[int, str]:
     original_by_id = {entry["id"]: entry for entry in state["entries"]}
     with get_connection() as db:
-        current = db.execute(
-            "SELECT version FROM timetables WHERE id = ?",
-            (state["id"],),
+        # Claim the exact version in one statement before modifying entries.
+        # A separate SELECT followed by a later UPDATE leaves a race where two
+        # requests can both read the same version and overwrite one another.
+        updated = db.execute(
+            """
+            UPDATE timetables
+            SET version = version + 1, last_updated = CURRENT_TIMESTAMP::text
+            WHERE id = ? AND version = ?
+            RETURNING version, last_updated
+            """,
+            (state["id"], state["version"]),
         ).fetchone()
-        if current is None or current["version"] != state["version"]:
+        if updated is None:
             raise HTTPException(
                 status_code=409,
                 detail="The timetable changed before the edit could be saved. Please try again.",
@@ -599,15 +607,6 @@ def _save_ai_timetable_edits(*, state: dict, final_entries: list[dict]) -> tuple
                 (entry["invigilator_username"], entry["id"]),
             )
 
-        updated = db.execute(
-            """
-            UPDATE timetables
-            SET version = version + 1, last_updated = CURRENT_TIMESTAMP::text
-            WHERE id = ?
-            RETURNING version, last_updated
-            """,
-            (state["id"],),
-        ).fetchone()
     return updated["version"], str(updated["last_updated"])
 
 

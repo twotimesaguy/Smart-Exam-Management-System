@@ -27,17 +27,20 @@ Use only the timetable context supplied by the user message.
 Schema:
 {
   "changes": [
-    {"operation":"update", "exam_id": 12, "field":"exam_date", "old":"2026-09-01", "new":"2026-09-08"},
-    {"operation":"update", "exam_id": 12, "field":"venue", "old":"Room B12", "new":"Room B14"},
+    {"operation":"update", "exam_id": 12, "field":"exam_date", "new":"2026-09-08"},
+    {"operation":"update", "exam_id": 12, "field":"venue", "new":"Room B14"},
     {"operation":"create", "values":{"course_code":"CHEM101", "course_title":"Chemistry", "exam_date":"2026-09-04", "start_time":"10:00", "end_time":"12:00", "venue":"Room C3", "student_level":"Level 100", "student_count":40, "invigilator_username":"Dr Name"}}
   ],
   "unresolved": ["short explanation for an ambiguous or unknown request"]
 }
 
-For updates use the exact exam_id and the exact current values supplied. Valid
+For updates use the exact exam_id supplied in the timetable context. Valid
 update fields are exam_date, start_time, end_time, venue, invigilator_username,
 course_code, course_title, student_level, and student_count. The aliases day,
 date, time, room, and invigilator are allowed but exact field names are preferred.
+Only return the field and its new value for an update. Do not return an `old`
+value: the server, not the model, verifies the timetable version immediately
+before saving the edit.
 For a time move, update start_time; retain the same duration unless a distinct
 end_time change is necessary. For a new exam, include every field in values.
 Do not invent rooms, invigilators, student counts, courses, or dates. Put anything

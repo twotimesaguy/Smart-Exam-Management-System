@@ -138,8 +138,12 @@ def _apply_change(
         return f"{change.field or 'That'} is not an editable timetable field.", next_temporary_id
     if change.new is None:
         return f"No new value was supplied for {field}.", next_temporary_id
-    if change.old is not None and str(entry[field]).strip().lower() != str(change.old).strip().lower():
-        return f"Exam {change.exam_id} has changed since the AI read it; please try again.", next_temporary_id
+    # The timetable version is checked by the router immediately before this
+    # proposal is planned and again atomically when it is saved.  Do not use
+    # ``change.old`` as another concurrency token: it is model-generated text
+    # and can differ from the supplied value only in formatting or be stale
+    # within the same fresh request.  Treating it as authoritative caused
+    # repeatable false "has changed since the AI read it" rejections.
     try:
         if field == "start_time":
             duration = _duration_minutes(entry["start_time"], entry["end_time"])

@@ -1,4 +1,5 @@
 import csv
+import heapq
 import re
 from datetime import datetime, timedelta
 from random import SystemRandom
@@ -615,23 +616,30 @@ def validate_live_timetable_entries(
                 f"{entry.invigilator_username} is not a known invigilator."
             )
 
-    for index, entry in enumerate(entries):
-        for other in entries[index + 1 :]:
-            if entry.exam_date != other.exam_date or not _times_overlap(entry, other):
-                continue
-            if entry.venue.lower() == other.venue.lower():
-                raise ValueError(
-                    f"{entry.venue} is double-booked on {entry.exam_date}."
-                )
-            if entry.invigilator_username.lower() == other.invigilator_username.lower():
-                raise ValueError(
-                    f"{entry.invigilator_username} is double-booked on {entry.exam_date}."
-                )
-            same_student_group = entry.student_level.lower() == other.student_level.lower()
-            if same_student_group and entry.course_code != other.course_code:
-                raise ValueError(
-                    f"{entry.student_level} has overlapping exams ({entry.course_code} and {other.course_code}) on {entry.exam_date}."
-                )
+    # Group and sort once instead of comparing every pair of entries. A large
+    # timetable can contain thousands of rows; the former nested loop made AI
+    # edits O(n²) and could outlive a hosting proxy's request deadline.
+    scheduled = [
+        (
+            entry,
+            _time_as_minutes(entry.start_time),
+            _time_as_minutes(entry.end_time),
+        )
+        for entry in entries
+    ]
+    _validate_resource_overlaps(
+        scheduled,
+        key=lambda entry: (entry.exam_date, entry.venue.lower()),
+        message=lambda entry: f"{entry.venue} is double-booked on {entry.exam_date}.",
+    )
+    _validate_resource_overlaps(
+        scheduled,
+        key=lambda entry: (entry.exam_date, entry.invigilator_username.lower()),
+        message=lambda entry: (
+            f"{entry.invigilator_username} is double-booked on {entry.exam_date}."
+        ),
+    )
+    _validate_student_group_overlaps(scheduled)
 
 
 def _times_overlap(first: TimetableEntryOut, second: TimetableEntryOut) -> bool:
@@ -640,6 +648,76 @@ def _times_overlap(first: TimetableEntryOut, second: TimetableEntryOut) -> bool:
     second_start = datetime.strptime(second.start_time[:5], "%H:%M")
     second_end = datetime.strptime(second.end_time[:5], "%H:%M")
     return first_start < second_end and second_start < first_end
+
+
+def _validate_resource_overlaps(
+    scheduled: list[tuple[TimetableEntryOut, int, int]],
+    *,
+    key,
+    message,
+) -> None:
+    groups: dict[tuple[str, str], list[tuple[TimetableEntryOut, int, int]]] = {}
+    for item in scheduled:
+        groups.setdefault(key(item[0]), []).append(item)
+
+    for items in groups.values():
+        latest_end = -1
+        for entry, start, end in sorted(items, key=lambda item: (item[1], item[2])):
+            if start < latest_end:
+                raise ValueError(message(entry))
+            latest_end = max(latest_end, end)
+
+
+def _validate_student_group_overlaps(
+    scheduled: list[tuple[TimetableEntryOut, int, int]],
+) -> None:
+    groups: dict[tuple[str, str], list[tuple[TimetableEntryOut, int, int]]] = {}
+    for item in scheduled:
+        entry = item[0]
+        groups.setdefault((entry.exam_date, entry.student_level.lower()), []).append(item)
+
+    for items in groups.values():
+        latest_by_course: dict[str, tuple[int, TimetableEntryOut]] = {}
+        endings: list[tuple[int, int, str, TimetableEntryOut]] = []
+        sequence = 0
+        for entry, start, end in sorted(items, key=lambda item: (item[1], item[2])):
+            course_code = entry.course_code.lower()
+            skipped: tuple[int, int, str, TimetableEntryOut] | None = None
+            _discard_stale_course_endings(endings, latest_by_course)
+            if endings and endings[0][2] == course_code:
+                skipped = heapq.heappop(endings)
+                _discard_stale_course_endings(endings, latest_by_course)
+            if endings and -endings[0][0] > start:
+                other = endings[0][3]
+                raise ValueError(
+                    f"{entry.student_level} has overlapping exams "
+                    f"({entry.course_code} and {other.course_code}) on {entry.exam_date}."
+                )
+            if skipped is not None:
+                heapq.heappush(endings, skipped)
+
+            previous = latest_by_course.get(course_code)
+            if previous is None or end > previous[0]:
+                latest_by_course[course_code] = (end, entry)
+                heapq.heappush(endings, (-end, sequence, course_code, entry))
+                sequence += 1
+
+
+def _discard_stale_course_endings(
+    endings: list[tuple[int, int, str, TimetableEntryOut]],
+    latest_by_course: dict[str, tuple[int, TimetableEntryOut]],
+) -> None:
+    while endings:
+        end, _, course_code, entry = endings[0]
+        latest = latest_by_course.get(course_code)
+        if latest is not None and latest[0] == -end and latest[1] is entry:
+            return
+        heapq.heappop(endings)
+
+
+def _time_as_minutes(value: str) -> int:
+    parsed = datetime.strptime(value[:5], "%H:%M")
+    return parsed.hour * 60 + parsed.minute
 
 
 def _next_available_invigilator(

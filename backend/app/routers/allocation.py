@@ -1,13 +1,16 @@
 from datetime import date, datetime, timedelta
 from io import BytesIO
+import logging
 from pathlib import Path
+import re
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app.database import clear_expired_timetables, get_connection
 from app.schemas import (
@@ -22,6 +25,7 @@ from app.schemas import (
 from app.services.ai_timetable import (
     AiTimetableConfigurationError,
     AiTimetableInterpretationError,
+    AiTimetableTimeoutError,
     interpret_timetable_edit,
 )
 from app.services.excel_export import build_timetable_workbook
@@ -32,6 +36,10 @@ from app.services.timetable import (
 )
 
 router = APIRouter(prefix="/allocation", tags=["allocation"])
+logger = logging.getLogger(__name__)
+
+_MAX_AI_CONTEXT_EXAMS = 250
+_MAX_AI_EDIT_CHANGES = 200
 
 
 @router.post("/generate", response_model=TimetableOut)
@@ -235,25 +243,48 @@ def timetable_version() -> dict:
 
 
 @router.post("/timetable/ai-edit", response_model=AiTimetableEditResult)
-async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditResult:
+async def ai_edit_timetable(
+    payload: AiTimetableEditRequest,
+    background_tasks: BackgroundTasks,
+) -> AiTimetableEditResult:
     """Interpret an admin request with Gemini, then validate/write it locally."""
-    state = _editable_timetable_state()
+    state = await run_in_threadpool(_editable_timetable_state)
     if state is None:
         raise HTTPException(status_code=404, detail="There is no generated timetable to edit yet.")
 
+    prompt = payload.prompt.strip()
+    context = _ai_context(state, prompt)
     try:
         proposal = await interpret_timetable_edit(
-            prompt=payload.prompt.strip(),
-            context=_ai_context(state),
+            prompt=prompt,
+            context=context,
         )
     except AiTimetableConfigurationError as error:
         raise HTTPException(status_code=503, detail=str(error))
+    except AiTimetableTimeoutError as error:
+        raise HTTPException(status_code=504, detail=str(error))
     except AiTimetableInterpretationError as error:
         raise HTTPException(status_code=502, detail=str(error))
+    except Exception as error:
+        logger.exception("Unexpected Gemini failure while interpreting a timetable edit")
+        raise HTTPException(
+            status_code=502,
+            detail="The AI timetable service failed unexpectedly. Please try again.",
+        ) from error
+
+    raw_changes = proposal.get("changes", [])
+    if len(raw_changes) > _MAX_AI_EDIT_CHANGES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"The AI proposed {len(raw_changes)} changes. Refine the request to no more "
+                f"than {_MAX_AI_EDIT_CHANGES} exams at a time."
+            ),
+        )
 
     changes: list[AiTimetableChange] = []
     rejected: list[dict] = []
-    for raw_change in proposal.get("changes", []):
+    for raw_change in raw_changes:
         try:
             changes.append(AiTimetableChange.model_validate(raw_change))
         except ValidationError:
@@ -266,7 +297,7 @@ async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditR
 
     # Do not apply a proposal to a timetable that changed while Gemini was
     # interpreting the request. The admin can safely submit it again.
-    latest_state = _editable_timetable_state()
+    latest_state = await run_in_threadpool(_editable_timetable_state)
     if latest_state is None or (
         latest_state["id"] != state["id"]
         or latest_state["version"] != state["version"]
@@ -276,7 +307,8 @@ async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditR
             detail="The timetable changed while the AI was preparing this edit. Please try again.",
         )
 
-    final_entries, applied, plan_rejected = plan_ai_timetable_edits(
+    final_entries, applied, plan_rejected = await run_in_threadpool(
+        plan_ai_timetable_edits,
         changes=changes,
         entries=state["entries"],
         venues=state["venues"],
@@ -295,11 +327,14 @@ async def ai_edit_timetable(payload: AiTimetableEditRequest) -> AiTimetableEditR
             last_updated=state["last_updated"],
         )
 
-    version, last_updated = _save_ai_timetable_edits(
+    version, last_updated = await run_in_threadpool(
+        _save_ai_timetable_edits,
         state=state,
         final_entries=final_entries,
     )
-    _export_current_timetable(state["id"])
+    # Excel generation can be slow for large timetables, so it must not keep
+    # this API request open after the validated database edit is committed.
+    background_tasks.add_task(_export_current_timetable, state["id"])
     return AiTimetableEditResult(
         applied=applied,
         rejected=rejected,
@@ -436,20 +471,70 @@ def _editable_timetable_state() -> dict | None:
     }
 
 
-def _ai_context(state: dict) -> dict:
+def _ai_context(state: dict, prompt: str) -> dict:
+    entries = _entries_relevant_to_prompt(state["entries"], prompt)
+    if entries is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This timetable is too large to send in full to the AI. Include a course "
+                "code, course title, venue, or invigilator name in the request."
+            ),
+        )
+    if len(entries) > _MAX_AI_CONTEXT_EXAMS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Your request matches {len(entries)} exams. Refine it to at most "
+                f"{_MAX_AI_CONTEXT_EXAMS} exams so the AI can respond reliably."
+            ),
+        )
+
+    selected_course_codes = {entry["course_code"].lower() for entry in entries}
     return {
         "timetable_id": state["id"],
         "version": state["version"],
         "title": state["title"],
         "exam_period": state["exam_period"],
-        "exams": state["entries"],
+        "exams": entries,
         "known_venues": [
             {"name": venue.name, "capacity": venue.capacity}
             for venue in state["venues"]
         ],
         "known_invigilators": state["invigilators"],
-        "known_courses": list(state["course_catalogue"].values()),
+        "known_courses": [
+            course
+            for code, course in state["course_catalogue"].items()
+            if code in selected_course_codes
+        ],
     }
+
+
+def _entries_relevant_to_prompt(entries: list[dict], prompt: str) -> list[dict] | None:
+    if len(entries) <= _MAX_AI_CONTEXT_EXAMS:
+        return entries
+
+    ignored_terms = {
+        "all", "and", "change", "date", "exam", "exams", "from", "move", "next",
+        "please", "schedule", "the", "this", "time", "timetable", "to", "week", "with",
+    }
+    terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+", prompt.casefold())
+        if len(term) >= 3 and term not in ignored_terms
+    }
+    if not terms:
+        return None
+
+    relevant = []
+    for entry in entries:
+        searchable = " ".join(
+            str(entry[field]).casefold()
+            for field in ("course_code", "course_title", "venue", "invigilator_username")
+        )
+        if any(term in searchable for term in terms):
+            relevant.append(entry)
+    return relevant or None
 
 
 def _entry_duration_minutes(entry: dict) -> int:

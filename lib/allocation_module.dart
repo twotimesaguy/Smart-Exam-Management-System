@@ -606,10 +606,7 @@ class _AllocationModuleState extends State<AllocationModule> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Describe the change you need. Changes are checked against rooms, '
-            'invigilators, capacity, and student clashes before they are saved.',
-          ),
+          const Text('Describe the changes you need'),
           const SizedBox(height: 12),
           TextField(
             controller: _aiEditController,

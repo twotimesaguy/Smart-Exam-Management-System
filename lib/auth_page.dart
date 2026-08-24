@@ -15,6 +15,8 @@ class _AuthPageState extends State<AuthPage> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final LocalAuthService _authService = LocalAuthService.instance;
+
   bool _isLoginMode = true;
   AppUserRole _selectedRole = AppUserRole.invigilator;
   bool _isSubmitting = false;
@@ -70,6 +72,13 @@ class _AuthPageState extends State<AuthPage> {
       _showMessage('Account created successfully.');
       widget.onAuthenticated(user);
     } catch (error) {
+      final fallbackUser = _isLoginMode
+          ? _authService.login(username: username, password: password)
+          : null;
+      if (fallbackUser != null) {
+        widget.onAuthenticated(fallbackUser);
+        return;
+      }
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {

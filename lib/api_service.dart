@@ -9,10 +9,9 @@ import 'package:flutter_application_1/student_registry.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
-  const ApiException(this.message, {this.statusCode});
+  const ApiException(this.message);
 
   final String message;
-  final int? statusCode;
 
   @override
   String toString() => message;
@@ -38,7 +37,6 @@ class ApiService {
   static final ApiService instance = ApiService._();
   static const Duration _requestTimeout = Duration(minutes: 2);
   String? _accessToken;
-  final ValueNotifier<bool> authenticationRequired = ValueNotifier(false);
 
   static const String _configuredBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -65,14 +63,6 @@ class ApiService {
   Map<String, String> get authorizationHeaders {
     final token = _accessToken;
     return token == null || token.isEmpty ? const {} : {'Authorization': 'Bearer $token'};
-  }
-
-  void setAccessToken(String? token) {
-    final value = token?.trim();
-    _accessToken = value == null || value.isEmpty ? null : value;
-    if (_accessToken != null) {
-      authenticationRequired.value = false;
-    }
   }
 
   void clearAccessToken() => _accessToken = null;
@@ -595,20 +585,12 @@ class ApiService {
       }
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      if (response.statusCode == 401) {
-        clearAccessToken();
-        authenticationRequired.value = true;
-      }
       if (body is Map<String, dynamic> && body['detail'] != null) {
-        throw ApiException(
-          body['detail'].toString(),
-          statusCode: response.statusCode,
-        );
+        throw ApiException(body['detail'].toString());
       }
       final responseMessage = body is String && body.isNotEmpty ? ' $body' : '';
       throw ApiException(
         'The server returned an error (${response.statusCode}).$responseMessage',
-        statusCode: response.statusCode,
       );
     }
     return body;
@@ -619,7 +601,7 @@ class ApiService {
     final user = map['user'] as Map<String, dynamic>;
     final token = map['token'] as String?;
     if (saveToken && token != null && token.isNotEmpty) {
-      setAccessToken(token);
+      _accessToken = token;
     }
     return _userFromMap(user, token: token);
   }

@@ -1,11 +1,10 @@
 import mimetypes
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
-from app.database import get_connection
+from app.database import BASE_DIR, get_connection
 from app.schemas import MalpracticeStatusUpdate
 from app.services.malpractice_forwarder import forward_report
 from app.services.pdf_export import build_malpractice_pdf
@@ -53,8 +52,16 @@ async def create_malpractice_report(
     foreign_material_image: UploadFile | None = File(None),
     student_statement_audio: UploadFile | None = File(None),
 ) -> dict:
-    student_face_path = await _save_optional_file("student_face", student_id, student_face_image)
-    material_path = await _save_optional_file("foreign_material", student_id, foreign_material_image)
+    (
+        student_face_bytes,
+        student_face_content_type,
+        student_face_filename,
+    ) = await _read_optional_image(student_face_image)
+    (
+        material_bytes,
+        material_content_type,
+        material_filename,
+    ) = await _read_optional_image(foreign_material_image)
     audio_bytes, audio_content_type, audio_filename = await _read_optional_audio(
         student_statement_audio
     )
@@ -65,9 +72,12 @@ async def create_malpractice_report(
             INSERT INTO malpractice_reports
                 (student_id, student_level, course_title, course_code, venue, invigilator_name,
                  chief_invigilator_name, chief_invigilator_approved, incident_description, student_statement, student_face_image_path,
-                 foreign_material_image_path, student_statement_audio,
+                 foreign_material_image_path,
+                 student_face_image_data, student_face_image_content_type,
+                 foreign_material_image_data, foreign_material_image_content_type,
+                 student_statement_audio,
                  student_statement_audio_content_type, student_statement_audio_filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             """,
             (
@@ -81,8 +91,12 @@ async def create_malpractice_report(
                 chief_invigilator_approved,
                 incident_description,
                 student_statement,
-                str(student_face_path) if student_face_path else None,
-                str(material_path) if material_path else None,
+                student_face_filename,
+                material_filename,
+                student_face_bytes,
+                student_face_content_type,
+                material_bytes,
+                material_content_type,
                 audio_bytes,
                 audio_content_type,
                 audio_filename,
@@ -132,33 +146,62 @@ def export_malpractice_reports_pdf() -> FileResponse:
 
 
 @router.get("/reports/{report_id}/evidence/{evidence_type}")
-def get_malpractice_evidence(report_id: int, evidence_type: str) -> FileResponse:
+def get_malpractice_evidence(report_id: int, evidence_type: str) -> Response:
     image_columns = {
-        "student-face": "student_face_image_path",
-        "foreign-material": "foreign_material_image_path",
+        "student-face": (
+            "student_face_image_path",
+            "student_face_image_data",
+            "student_face_image_content_type",
+        ),
+        "foreign-material": (
+            "foreign_material_image_path",
+            "foreign_material_image_data",
+            "foreign_material_image_content_type",
+        ),
     }
-    image_column = image_columns.get(evidence_type)
-    if image_column is None:
+    columns = image_columns.get(evidence_type)
+    if columns is None:
         raise HTTPException(status_code=404, detail="Evidence image not found.")
+    path_column, data_column, content_type_column = columns
 
     with get_connection() as db:
         row = db.execute(
-            f"SELECT {image_column} FROM malpractice_reports WHERE id = ?",
+            f"SELECT {path_column}, {data_column}, {content_type_column} "
+            "FROM malpractice_reports WHERE id = ?",
             (report_id,),
         ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Report not found.")
 
-    image_path = row[image_column]
-    if not image_path:
+    image_data = row[data_column]
+    if image_data is not None:
+        return Response(
+            content=bytes(image_data),
+            media_type=row[content_type_column] or "image/jpeg",
+        )
+
+    path = _legacy_evidence_path(row[path_column])
+    if path is None:
         raise HTTPException(status_code=404, detail="Evidence image not found.")
 
-    path = Path(image_path)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Evidence image not found.")
+    try:
+        image_data = path.read_bytes()
+    except OSError as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence image not found.",
+        ) from error
 
-    return FileResponse(path)
+    content_type = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+    with get_connection() as db:
+        db.execute(
+            f"UPDATE malpractice_reports SET {data_column} = ?, "
+            f"{content_type_column} = ? WHERE id = ?",
+            (image_data, content_type, report_id),
+        )
+
+    return Response(content=image_data, media_type=content_type)
 
 
 @router.get("/reports/{report_id}/statement-audio")
@@ -244,20 +287,40 @@ async def forward_existing_report(report_id: int) -> dict:
     return _report_payload(updated)
 
 
-async def _save_optional_file(
-    evidence_type: str,
-    student_id: str,
+async def _read_optional_image(
     upload: UploadFile | None,
-) -> Path | None:
+) -> tuple[bytes | None, str | None, str | None]:
     if upload is None:
+        return None, None, None
+
+    image_bytes = await upload.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="The evidence image is empty.")
+
+    filename = Path(upload.filename or "evidence.jpg").name
+    guessed_content_type = mimetypes.guess_type(filename)[0]
+    content_type = (
+        upload.content_type
+        if upload.content_type and upload.content_type.startswith("image/")
+        else guessed_content_type or "image/jpeg"
+    )
+    return image_bytes, content_type, filename
+
+
+def _legacy_evidence_path(image_path: str | None) -> Path | None:
+    """Find evidence saved by earlier releases that used the local filesystem."""
+    if not image_path:
         return None
 
-    evidence_dir = Path("backend/data/malpractice_evidence")
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    extension = Path(upload.filename or "evidence.jpg").suffix or ".jpg"
-    path = evidence_dir / f"{student_id}_{evidence_type}_{uuid4().hex}{extension}"
-    path.write_bytes(await upload.read())
-    return path
+    stored_path = Path(image_path)
+    candidates = [stored_path]
+    if not stored_path.is_absolute():
+        candidates.extend([BASE_DIR / stored_path, BASE_DIR.parent / stored_path])
+
+    return next(
+        (path for path in candidates if path.exists() and path.is_file()),
+        None,
+    )
 
 
 async def _read_optional_audio(
@@ -286,7 +349,12 @@ async def _read_optional_audio(
 
 
 def _report_payload(row) -> dict:
-    """Return report metadata without sending the audio blob in JSON/webhooks."""
+    """Return report metadata without sending binary evidence in JSON/webhooks."""
     report = dict(row)
-    report.pop("student_statement_audio", None)
+    for column in (
+        "student_face_image_data",
+        "foreign_material_image_data",
+        "student_statement_audio",
+    ):
+        report.pop(column, None)
     return report

@@ -179,6 +179,10 @@ def init_db() -> None:
                 student_statement TEXT NOT NULL,
                 student_face_image_path TEXT,
                 foreign_material_image_path TEXT,
+                student_face_image_data BYTEA,
+                student_face_image_content_type TEXT,
+                foreign_material_image_data BYTEA,
+                foreign_material_image_content_type TEXT,
                 student_statement_audio BYTEA,
                 student_statement_audio_content_type TEXT,
                 student_statement_audio_filename TEXT,
@@ -234,6 +238,18 @@ def _add_missing_columns(db: DatabaseConnection) -> None:
     )
     db.execute(
         "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS chief_invigilator_approved BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_face_image_data BYTEA"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_face_image_content_type TEXT"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS foreign_material_image_data BYTEA"
+    )
+    db.execute(
+        "ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS foreign_material_image_content_type TEXT"
     )
     db.execute("ALTER TABLE malpractice_reports ADD COLUMN IF NOT EXISTS student_statement_audio BYTEA")
     db.execute(

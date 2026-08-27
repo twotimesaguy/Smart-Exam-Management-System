@@ -6,7 +6,7 @@ import re
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import ValidationError
@@ -189,7 +189,10 @@ def _save_generated_timetable(
 
 
 @router.get("/timetables", response_model=list[TimetableOut])
-def list_timetables() -> list[TimetableOut]:
+def list_timetables(response: Response) -> list[TimetableOut]:
+    # Timetables are edited from multiple clients. Do not let a browser or CDN
+    # reuse an older list after another client saves an AI edit.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     clear_expired_timetables()
 
     with get_connection() as db:
@@ -221,8 +224,9 @@ def list_timetables() -> list[TimetableOut]:
 
 
 @router.get("/timetable/version")
-def timetable_version() -> dict:
+def timetable_version(response: Response) -> dict:
     """A small response clients can poll before downloading timetable data."""
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     clear_expired_timetables()
     with get_connection() as db:
         timetable = db.execute(
@@ -373,6 +377,7 @@ def download_timetable_excel(timetable_id: int) -> FileResponse:
         path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=path.name,
+        headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 

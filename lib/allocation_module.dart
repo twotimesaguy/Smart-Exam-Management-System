@@ -13,7 +13,8 @@ class AllocationModule extends StatefulWidget {
   State<AllocationModule> createState() => _AllocationModuleState();
 }
 
-class _AllocationModuleState extends State<AllocationModule> {
+class _AllocationModuleState extends State<AllocationModule>
+    with WidgetsBindingObserver {
   static const _semesterOptions = ['First Semester', 'Second Semester'];
   static const _wizardStepNames = [
     'Lecturers',
@@ -49,6 +50,7 @@ class _AllocationModuleState extends State<AllocationModule> {
   bool _isOpeningExcel = false;
   bool _isClearingTimetable = false;
   bool _isApplyingAiEdit = false;
+  bool _isCheckingTimetableVersion = false;
   Timer? _timetablePollTimer;
   String? _timetableVersion;
   int _timetableLoadGeneration = 0;
@@ -64,12 +66,14 @@ class _AllocationModuleState extends State<AllocationModule> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadTimetables();
     _startTimetablePolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _titleController.dispose();
     _lecturersController.dispose();
     _venuesController.dispose();
@@ -80,6 +84,16 @@ class _AllocationModuleState extends State<AllocationModule> {
     _timeSlotsController.dispose();
     _timetablePollTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Browsers may throttle timers while their tab is in the background. Check
+    // as soon as the user returns so edits made from another client are shown
+    // without waiting for the next polling interval.
+    if (state == AppLifecycleState.resumed) {
+      _checkForTimetableUpdate();
+    }
   }
 
   Future<bool> _loadTimetables({bool showLoading = true}) async {
@@ -132,6 +146,10 @@ class _AllocationModuleState extends State<AllocationModule> {
   }
 
   Future<void> _checkForTimetableUpdate() async {
+    if (_isCheckingTimetableVersion) {
+      return;
+    }
+    _isCheckingTimetableVersion = true;
     final checkGeneration = ++_timetableVersionCheckGeneration;
     try {
       final version = await ApiService.instance.fetchTimetableVersion();
@@ -146,6 +164,8 @@ class _AllocationModuleState extends State<AllocationModule> {
       }
     } catch (_) {
       // Polling is opportunistic; visible requests continue to show errors.
+    } finally {
+      _isCheckingTimetableVersion = false;
     }
   }
 

@@ -1,8 +1,8 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api_service.dart';
 import 'package:flutter_application_1/local_auth.dart';
+import 'package:flutter_application_1/local_image_preview.dart';
 import 'package:flutter_application_1/module_shell.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -53,7 +53,9 @@ class _ProfileModuleState extends State<ProfileModule> {
       if (currentUser.id != null) {
         final updatedUser = await ApiService.instance.uploadProfilePicture(
           userId: currentUser.id!,
-          imagePath: image.path,
+          imagePath: kIsWeb ? null : image.path,
+          imageBytes: kIsWeb ? await image.readAsBytes() : null,
+          imageFileName: image.name,
         );
         savedImageUrl = updatedUser.profileImageUrl == null
             ? null
@@ -299,8 +301,8 @@ class _ProfileAvatar extends StatelessWidget {
         width: 84,
         height: 84,
         child: path != null
-            ? Image.file(
-                File(path),
+            ? buildLocalImagePreview(
+                path: path,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) =>
                     _InitialsAvatar(username: username),

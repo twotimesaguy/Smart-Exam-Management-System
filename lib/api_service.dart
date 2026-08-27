@@ -136,10 +136,20 @@ class ApiService {
         'full_name': fullName,
         'programme': programme,
         'level': level,
-      })
-      ..files.add(
+      });
+    if (kIsWeb) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'face_image',
+          faceImageBytes,
+          filename: 'student_face.jpg',
+        ),
+      );
+    } else {
+      request.files.add(
         await http.MultipartFile.fromPath('face_image', faceImagePath),
       );
+    }
 
     final data = await _sendMultipart(request);
     return RegisteredStudent.fromJson(
@@ -231,7 +241,7 @@ class ApiService {
           });
 
     for (final file in files) {
-      if (file.path != null && file.path!.isNotEmpty) {
+      if (!kIsWeb && file.path != null && file.path!.isNotEmpty) {
         request.files.add(
           await http.MultipartFile.fromPath(
             '${file.category}_files',
@@ -247,6 +257,8 @@ class ApiService {
             filename: file.name,
           ),
         );
+      } else {
+        throw ApiException('Could not read the selected file: ${file.name}.');
       }
     }
 
@@ -267,16 +279,31 @@ class ApiService {
 
   Future<LocalUser> uploadProfilePicture({
     required int userId,
-    required String imagePath,
+    String? imagePath,
+    List<int>? imageBytes,
+    String? imageFileName,
   }) async {
-    final request =
-        http.MultipartRequest(
-            'POST',
-            _uri('/auth/users/$userId/profile-picture'),
-          )
-          ..files.add(
-            await http.MultipartFile.fromPath('profile_picture', imagePath),
-          );
+    if (imagePath == null && imageBytes == null) {
+      throw const ApiException('Choose a profile picture before uploading.');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/auth/users/$userId/profile-picture'),
+    );
+    if (imageBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'profile_picture',
+          imageBytes,
+          filename: imageFileName ?? 'profile_picture.jpg',
+        ),
+      );
+    } else {
+      request.files.add(
+        await http.MultipartFile.fromPath('profile_picture', imagePath!),
+      );
+    }
 
     final data = await _sendMultipart(request) as Map<String, dynamic>;
     return _userFromMap(data, token: null);

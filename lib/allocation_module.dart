@@ -311,12 +311,18 @@ class _AllocationModuleState extends State<AllocationModule> {
     try {
       final timetableId = timetable['id'] as int;
       final title = timetable['title'] as String;
+      // The Android file provider uses the export filename as part of its
+      // content URI.  Include the server version so a spreadsheet viewer does
+      // not reuse a cached copy after an AI edit.
+      final version =
+          timetable['version'] ?? DateTime.now().microsecondsSinceEpoch;
+      final safeTitle = title.toLowerCase().replaceAll(' ', '_');
       final bytes = await ApiService.instance.downloadTimetableExcel(
         timetableId: timetableId,
       );
       await FileExportService.instance.saveAndOpen(
         fileName:
-            '${title.toLowerCase().replaceAll(' ', '_')}_$timetableId.xlsx',
+            '${safeTitle}_${timetableId}_v$version.xlsx',
         bytes: bytes,
         mimeType:
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -362,6 +368,16 @@ class _AllocationModuleState extends State<AllocationModule> {
             ),
           ),
         );
+        return;
+      }
+      // The API has committed the edit and the refreshed list now contains
+      // its new version.  Open that version so the admin is not left viewing
+      // the pre-edit workbook in the spreadsheet application.
+      final applied = result['applied'] as List<dynamic>? ?? const [];
+      if (applied.isNotEmpty && _timetables.isNotEmpty) {
+        await _openTimetableExcel(_timetables.first, showLoading: false);
+      }
+      if (!mounted) {
         return;
       }
       await showDialog<void>(

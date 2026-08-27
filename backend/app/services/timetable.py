@@ -449,6 +449,23 @@ def _generate_local_timetable_entries(
         eligible_invigilators = [
             request.course_lecturers[course.course_code]
         ] if course.course_code in request.course_lecturers else request.invigilators
+        course_session = _next_available_course_session(
+            course.course_code,
+            course.student_level,
+            course.duration_minutes,
+            remaining_students,
+            slots,
+            used_slots,
+            level_slot_courses,
+            eligible_invigilators,
+            invigilator_dates,
+            invigilator_slots,
+        )
+        if course_session is None:
+            raise ValueError(
+                f"No single conflict-free session has enough rooms and invigilators for "
+                f"{course.course_code}. Add venue capacity or invigilators."
+            )
         while remaining_students > 0:
             slot = _next_available_slot(
                 course.course_code,
@@ -461,11 +478,12 @@ def _generate_local_timetable_entries(
                 eligible_invigilators,
                 invigilator_dates,
                 invigilator_slots,
+                required_session=course_session,
             )
             if slot is None:
                 raise ValueError(
-                    "No conflict-free slot remains for all supplied courses in the selected "
-                    "exam period. Add dates, time slots, venue capacity, or invigilators."
+                    f"No single conflict-free session remains for {course.course_code}. "
+                    "Add venue capacity or invigilators."
                 )
 
             exam_date, start_time, venue = slot
@@ -519,8 +537,12 @@ def _next_available_slot(
     invigilators: list[str],
     invigilator_dates: dict[str, set[str]],
     invigilator_slots: set[tuple[str, str, str]],
+    *,
+    required_session: tuple[str, str] | None = None,
 ) -> tuple[str, str, VenueInput] | None:
     for exam_date, start_time, venue in slots:
+        if required_session is not None and (exam_date, start_time) != required_session:
+            continue
         slot_key = (exam_date, start_time, venue.name)
         if slot_key in used_slots:
             continue
@@ -542,6 +564,61 @@ def _next_available_slot(
         ):
             continue
         return exam_date, start_time, venue
+    return None
+
+
+def _next_available_course_session(
+    course_code: str,
+    student_level: str,
+    duration_minutes: int,
+    student_count: int,
+    slots: list[tuple[str, str, VenueInput]],
+    used_slots: set[tuple[str, str, str]],
+    level_slot_courses: dict[tuple[str, str, str], str],
+    invigilators: list[str],
+    invigilator_dates: dict[str, set[str]],
+    invigilator_slots: set[tuple[str, str, str]],
+) -> tuple[str, str] | None:
+    """Find one session that can host every room batch of a single exam."""
+    sessions: list[tuple[str, str]] = []
+    seen_sessions: set[tuple[str, str]] = set()
+    for exam_date, start_time, _ in slots:
+        session = (exam_date, start_time)
+        if session not in seen_sessions:
+            seen_sessions.add(session)
+            sessions.append(session)
+
+    for exam_date, start_time in sessions:
+        level_slot_key = (student_level.lower(), exam_date, start_time)
+        existing_course = level_slot_courses.get(level_slot_key)
+        if existing_course is not None and existing_course != course_code:
+            continue
+        if not _fits_exam_window(start_time, duration_minutes):
+            continue
+        available_invigilators = [
+            invigilator
+            for invigilator in invigilators
+            if _is_invigilator_available(
+                invigilator,
+                exam_date,
+                start_time,
+                invigilator_dates,
+                invigilator_slots,
+            )
+        ]
+        available_venues = [
+            venue
+            for slot_date, slot_time, venue in slots
+            if (slot_date, slot_time) == (exam_date, start_time)
+            and (slot_date, slot_time, venue.name) not in used_slots
+        ]
+        available_venues.sort(key=_effective_capacity, reverse=True)
+        capacity = sum(
+            _effective_capacity(venue)
+            for venue in available_venues[: len(available_invigilators)]
+        )
+        if capacity >= student_count:
+            return exam_date, start_time
     return None
 
 

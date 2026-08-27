@@ -514,9 +514,23 @@ def _entries_relevant_to_prompt(entries: list[dict], prompt: str) -> list[dict] 
     if len(entries) <= _MAX_AI_CONTEXT_EXAMS:
         return entries
 
+    # Prefer complete course-title or course-code matches.  A request such as
+    # "swap Irrigation System Design with Geotechnical Engineering" previously
+    # matched every entry containing just "engineering", which is both noisy
+    # and can exceed the context limit for an otherwise precise request.
+    prompt_text = f" {' '.join(re.findall(r'[a-z0-9]+', prompt.casefold()))} "
+    named_entries = [
+        entry
+        for entry in entries
+        if _course_is_named_in_prompt(entry, prompt_text)
+    ]
+    if named_entries:
+        return named_entries
+
     ignored_terms = {
-        "all", "and", "change", "date", "exam", "exams", "from", "move", "next",
-        "please", "schedule", "the", "this", "time", "timetable", "to", "week", "with",
+        "all", "and", "change", "date", "exam", "exams", "exchange", "from", "move",
+        "next", "please", "schedule", "session", "the", "this", "time", "timetable",
+        "to", "week", "with",
     }
     terms = {
         term
@@ -535,6 +549,23 @@ def _entries_relevant_to_prompt(entries: list[dict], prompt: str) -> list[dict] 
         if any(term in searchable for term in terms):
             relevant.append(entry)
     return relevant or None
+
+
+def _course_is_named_in_prompt(entry: dict, prompt_text: str) -> bool:
+    course_code = "".join(re.findall(r"[a-z0-9]+", str(entry["course_code"]).casefold()))
+    prompt_code = "".join(re.findall(r"[a-z0-9]+", prompt_text))
+    if course_code and course_code in prompt_code:
+        return True
+
+    title_words = re.findall(r"[a-z0-9]+", str(entry["course_title"]).casefold())
+    # Requiring at least two consecutive title words avoids broad matches such
+    # as "engineering" while still accepting partial, natural-language names.
+    for length in range(len(title_words), 1, -1):
+        for start in range(len(title_words) - length + 1):
+            phrase = " ".join(title_words[start : start + length])
+            if f" {phrase} " in prompt_text:
+                return True
+    return False
 
 
 def _entry_duration_minutes(entry: dict) -> int:

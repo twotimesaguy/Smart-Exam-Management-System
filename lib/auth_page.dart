@@ -142,7 +142,7 @@ class _AuthPageState extends State<AuthPage> {
                             }
                             if (!_isLoginMode &&
                                 !RegExp(r'[A-Za-z]').hasMatch(username)) {
-                              return 'Username must include at least one letter';
+                              return 'Username cannot contain only numbers';
                             }
                             return null;
                           },

@@ -622,7 +622,7 @@ class ApiService {
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (body is Map<String, dynamic> && body['detail'] != null) {
-        throw ApiException(body['detail'].toString());
+        throw ApiException(_errorMessage(body['detail']));
       }
       final responseMessage = body is String && body.isNotEmpty ? ' $body' : '';
       throw ApiException(
@@ -630,6 +630,25 @@ class ApiService {
       );
     }
     return body;
+  }
+
+  String _errorMessage(dynamic detail) {
+    if (detail is List && detail.isNotEmpty) {
+      final firstError = detail.first;
+      if (firstError is Map && firstError['msg'] is String) {
+        return _friendlyErrorMessage(firstError['msg'] as String);
+      }
+    }
+
+    return _friendlyErrorMessage(detail.toString());
+  }
+
+  String _friendlyErrorMessage(String message) {
+    if (message.contains('Username must include at least one letter')) {
+      return 'Username cannot contain only numbers.';
+    }
+
+    return message.replaceFirst(RegExp(r'^Value error,\\s*'), '');
   }
 
   LocalUser _authUserFromResponse(dynamic data) {

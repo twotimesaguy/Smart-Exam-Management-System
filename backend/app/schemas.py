@@ -12,7 +12,7 @@ class UserCreate(BaseModel):
     @classmethod
     def username_must_include_a_letter(cls, value: str) -> str:
         if not any(character.isalpha() for character in value):
-            raise ValueError("Username must include at least one letter.")
+            raise ValueError("Username cannot contain only numbers.")
         return value
 
 

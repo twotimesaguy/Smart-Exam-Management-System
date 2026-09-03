@@ -97,7 +97,7 @@ class LocalAuthService {
     }
 
     if (!RegExp(r'[A-Za-z]').hasMatch(normalizedUsername)) {
-      throw FlutterError('Username must include at least one letter.');
+      throw FlutterError('Username cannot contain only numbers.');
     }
 
     if (usernameExists(normalizedUsername)) {

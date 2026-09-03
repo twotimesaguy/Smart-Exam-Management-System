@@ -96,6 +96,10 @@ class LocalAuthService {
       throw FlutterError('Username and password are required.');
     }
 
+    if (!RegExp(r'[A-Za-z]').hasMatch(normalizedUsername)) {
+      throw FlutterError('Username must include at least one letter.');
+    }
+
     if (usernameExists(normalizedUsername)) {
       throw FlutterError('Username already exists.');
     }

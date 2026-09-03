@@ -136,8 +136,13 @@ class _AuthPageState extends State<AuthPage> {
                             prefixIcon: Icon(Icons.person_outline),
                           ),
                           validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
+                            final username = value?.trim() ?? '';
+                            if (username.isEmpty) {
                               return 'Username is required';
+                            }
+                            if (!_isLoginMode &&
+                                !RegExp(r'[A-Za-z]').hasMatch(username)) {
+                              return 'Username must include at least one letter';
                             }
                             return null;
                           },

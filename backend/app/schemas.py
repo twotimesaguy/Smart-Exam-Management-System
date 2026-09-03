@@ -1,12 +1,19 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=2)
     password: str = Field(min_length=4)
     role: str = Field(pattern="^(admin|invigilator|disciplinary_officer)$")
+
+    @field_validator("username")
+    @classmethod
+    def username_must_include_a_letter(cls, value: str) -> str:
+        if not any(character.isalpha() for character in value):
+            raise ValueError("Username must include at least one letter.")
+        return value
 
 
 class UserLogin(BaseModel):
